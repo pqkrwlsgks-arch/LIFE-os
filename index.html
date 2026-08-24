@@ -247,13 +247,38 @@ async function callAI(prompt, imageB64){
   const d = await r.json();
   return (d.content||[]).map(c=>c.type==='text'?c.text:'').join('').trim();
 }
+/* 제공자에게 직접 물어보는 사용 가능한 모델 목록 */
+async function fetchModels(){
+  const p=S.cfg.provider, key=curKey();
+  if(!key) throw new Error('키를 먼저 넣고 저장해 주세요');
+  if(p==='gemini'){
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?key='+encodeURIComponent(key)+'&pageSize=200');
+    if(!r.ok) throw new Error(await errText(r));
+    const d=await r.json();
+    return (d.models||[])
+      .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
+      .map(m=>m.name.replace(/^models\//,''))
+      .filter(n=>!/embedding|aqa|imagen|veo|tts|audio|image|live/i.test(n));
+  }
+  if(p==='openai'){
+    const r=await fetch('https://api.openai.com/v1/models',{headers:{authorization:'Bearer '+key}});
+    if(!r.ok) throw new Error(await errText(r));
+    const d=await r.json();
+    return (d.data||[]).map(m=>m.id).filter(n=>/^(gpt|o\d|chatgpt)/i.test(n) && !/audio|realtime|transcribe|tts|image|embedding/i.test(n));
+  }
+  const r=await fetch('https://api.anthropic.com/v1/models?limit=100',
+    {headers:{'x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}});
+  if(!r.ok) throw new Error(await errText(r));
+  const d=await r.json();
+  return (d.data||[]).map(m=>m.id);
+}
 async function errText(r){
   let t=''; try{ const j=await r.json(); t = (j.error && (j.error.message||j.error.type)) || JSON.stringify(j); }
   catch(e){ t = await r.text().catch(()=>''); }
   if(r.status===401 || r.status===403) return 'API 키가 올바르지 않습니다';
   if(r.status===429) return '호출 한도를 넘었습니다. 잠시 뒤 다시 시도하세요';
-  if(r.status===404) return '모델 이름이 맞지 않습니다: '+curModel();
-  return (t||'오류').slice(0,90);
+  if(r.status===404) return '‘'+curModel()+'’ 모델이 없습니다. 아래 ‘쓸 수 있는 모델 보기’를 눌러 목록에서 고르세요.';
+  return (t||'오류').slice(0,110);
 }
 function parseJSON(raw){
   const c = raw.replace(/```json|```/g,'').trim();
@@ -768,6 +793,13 @@ function settings(){
       <div style="height:12px"></div>
       <button class="btn primary tap" data-act="savekey">저장하기</button>
       <div style="height:10px"></div>
+      <button class="btn ghost tap" data-act="listmodels">${S.busy?'불러오는 중…':'쓸 수 있는 모델 보기'}</button>
+      ${S.modelList&&S.modelList.length?`<div class="fade" style="margin-top:14px">
+        <p class="small" style="font-weight:700;margin-bottom:8px">눌러서 고르세요 (${S.modelList.length}개)</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;max-height:260px;overflow:auto">
+          ${S.modelList.map(m=>`<button class="pill sm tap ${S.cfg.models[p]===m?'on':''}" data-act="pickmodel" data-v="${esc(m)}">${esc(m)}</button>`).join('')}
+        </div></div>`:''}
+      <div style="height:10px"></div>
       <button class="btn ghost tap" data-act="testai">연결 확인</button>
       ${hasKey()?'<p class="small" style="margin-top:12px;color:var(--green);font-weight:600">현재 '+info.name+' 연결됨</p>':'<p class="small" style="margin-top:12px">아직 연결되지 않음 — 규칙 분류로만 동작합니다</p>'}
     </div>
@@ -958,6 +990,19 @@ document.addEventListener('click', async e=>{
     case 'aitoday': aiToday(); break;
     case 'weekly': weekly(); break;
     case 'testai': testAI(); break;
+    case 'listmodels': {
+      if(S.busy) break;
+      const k=document.getElementById('apikey'); if(k && k.value.trim()){ S.cfg.keys[S.cfg.provider]=k.value.trim(); save.cfg(); }
+      S.busy=true; render();
+      try{
+        const list=await fetchModels();
+        S.modelList=list;
+        if(!list.length) toast('쓸 수 있는 모델이 없습니다. 키를 새로 발급해 보세요.');
+      }catch(err){ S.modelList=null; toast('목록 실패: '+err.message); }
+      S.busy=false; render(); break; }
+    case 'pickmodel':
+      S.cfg.models[S.cfg.provider]=v; save.cfg(); render();
+      toast(v+' 로 설정했습니다. ‘연결 확인’을 눌러 보세요.'); break;
     case 'prov': S.cfg.provider=v; save.cfg(); render(); break;
     case 'savekey': {
       const k=document.getElementById('apikey').value.trim();
