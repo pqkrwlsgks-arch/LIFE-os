@@ -87,13 +87,26 @@ textarea,input[type=text],input[type=password]{width:100%;background:var(--bg);b
 .viewer img{max-width:100%;max-height:60vh;border-radius:12px}
 .warn{border-left:4px solid var(--red);background:#FDF4F2;border-radius:10px;padding:14px 16px}
 .info{border-left:4px solid var(--blue);background:#F1F5FE;border-radius:10px;padding:14px 16px}
+.pblock{margin-bottom:22px}
+.phead{display:flex;align-items:baseline;justify-content:space-between;border-left:4px solid var(--ink);
+  padding:2px 0 2px 10px;margin-bottom:4px}
+.phead b{font-size:17px;font-weight:700}
+.phead span{font-size:14px;color:var(--ink3);font-weight:600}
+.trow{display:flex;gap:12px;align-items:center;padding:13px 0 13px 14px;border-bottom:1px solid var(--line)}
+.tt2{font-size:17px;font-weight:600;line-height:1.4}
+.tt2.off{text-decoration:line-through;color:var(--ink3)}
+.tmeta{font-size:13.5px;color:var(--ink2);margin-top:2px}
+.micbtn{width:44px;height:44px;flex:0 0 44px;border-radius:22px;border:1.5px solid var(--line);
+  background:var(--bg);color:var(--ink);display:flex;align-items:center;justify-content:center}
+.micbtn.on{background:var(--red);border-color:var(--red);color:#fff}
+.stopsq{width:14px;height:14px;border-radius:3px;background:#fff;display:block}
 .hero{padding:26px 0 6px}
 .eyebrow{font-size:14px;color:var(--ink2);font-weight:600;margin:0 0 6px}
 h1.big{margin:0 0 20px;font-size:32px;font-weight:800;letter-spacing:-.035em;line-height:1.28}
 .bigmic{font-size:19px;padding:20px;display:flex;align-items:center;justify-content:center;gap:10px}
 .sigrow{display:flex;gap:6px}
 .sigcell{flex:1;background:var(--panel);border-radius:12px;padding:11px 4px;text-align:center}
-.sigcell span{display:block;font-size:17px}
+.sigcell span{display:block;font-size:21px;font-weight:800}
 .sigcell b{display:block;font-size:12.5px;font-weight:600;color:var(--ink2);margin-top:3px}
 .chat{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
 .bub{max-width:88%;padding:14px 16px;border-radius:16px;font-size:16px;line-height:1.75;white-space:pre-wrap}
@@ -147,8 +160,8 @@ const AREA={ WORK:'일', BODY:'몸과 마음', GROWTH:'배움', MONEY:'돈', LIF
 const AORD=['WORK','BODY','GROWTH','MONEY','LIFE'];
 const AHINT={ WORK:'회사·프로젝트·설비·성과', BODY:'건강·운동·수면·컨디션·감정',
   GROWTH:'공부·자격증·독서·기술', MONEY:'자산·소비·투자', LIFE:'가족·친구·여행·취미·일상' };
-const TYPE={ record:'기록', event:'일정', task:'할 일', goal:'목표', idea:'생각', reminder:'알림' };
-const TORD=['record','event','task','goal','idea','reminder'];
+const TYPE={ record:'기록', task:'할 일', event:'일정', reminder:'알림' };
+const TORD=['record','task','event','reminder'];
 const MIG={ Career:'WORK', Wealth:'MONEY', Health:'BODY', Growth:'GROWTH',
   Relationship:'LIFE', Life:'LIFE' };
 const GROWTHRE=/공부|자격증|독서|책|강의|논문|배우|학습|연구|영어/;
@@ -213,6 +226,20 @@ const save={ ses:()=>write(K.ses,S.sessions), items:()=>write(K.items,S.items),
     save.ses(); save.items();
   }
   localStorage.setItem(K.mig,'1');
+})();
+
+/* v6: 종류 단순화 — 목표→할 일, 생각→기록 */
+(function migrate6(){
+  if(localStorage.getItem('lifeos.v6.migrated')) return;
+  let ch=false;
+  S.items.forEach(i=>{
+    if(i.type==='goal'){ i.type='task'; if(i.status!=='done') i.status='open';
+      i.tags=[...new Set([...(i.tags||[]),'목표'])]; ch=true; }
+    else if(i.type==='idea'){ i.type='record';
+      i.tags=[...new Set([...(i.tags||[]),'생각'])]; ch=true; }
+  });
+  if(ch) save.items();
+  localStorage.setItem('lifeos.v6.migrated','1');
 })();
 
 /* v4(4영역) → v5(5영역) 이관 + 개인/회사 통합 */
@@ -344,11 +371,11 @@ function parseJSON(raw){const c=raw.replace(/```json|```/g,'').trim();
 /* --- 기억 컨텍스트 (L1 최근 + 열린 항목) --- */
 function memoryBlock(){
   const recent=S.items.filter(i=>i.createdAt>Date.now()-14*DAY).slice(-35)
-    .map(i=>new Date(i.occurredAt||i.createdAt).toISOString().slice(0,10)+'|'+i.area+'|'+i.type+'|'+
+    .map(i=>new Date(i.occurredAt||i.createdAt).toISOString().slice(0,10)+'|'+((i.tags||[]).join('/')||'-')+'|'+i.type+'|'+
       (i.sentiment==='plus'?'+':i.sentiment==='minus'?'-':'=')+'|'+i.title).join('\n');
   const open=S.items.filter(i=>i.type==='task'&&i.status==='open').slice(0,15)
     .map(i=>'- '+i.title+(i.dueAt?' (기한 '+fmd(i.dueAt)+')':' (기한 없음)')).join('\n');
-  const goals=S.items.filter(i=>i.type==='goal').slice(0,8).map(i=>'- '+i.title).join('\n');
+  const goals=S.items.filter(i=>i.type==='task'&&(i.tags||[]).includes('목표')).slice(0,8).map(i=>'- '+i.title).join('\n');
   return `[최근 14일]\n${recent||'없음'}\n\n[열린 할 일]\n${open||'없음'}\n\n[목표]\n${goals||'없음'}`;
 }
 async function aiDecompose(text, mode, photoCaptions){
@@ -366,10 +393,9 @@ ${photoCaptions?'\n[함께 올린 사진]\n'+photoCaptions:''}
 
 규칙
 - 한 번의 말에 여러 건이 섞이면 나눈다. 하나면 하나만.
-- type: record(이미 일어난 일) / event(약속·회의·방문처럼 특정 시각에 있는 일정) / task(해야 할 일) / goal(목표) / idea(생각·가치관) / reminder(반복 알림 요청)
-- 시각이 정해진 약속이면 task가 아니라 event로 한다. 예: "내일 3시 회의" → event
-- area: WORK(회사·프로젝트·설비·성과) / BODY(건강·운동·수면·컨디션·감정) / GROWTH(공부·자격증·독서·기술) / MONEY(자산·소비·투자) / LIFE(가족·친구·여행·취미·일상)
-- tags: 세부 태그 1~3개를 한국어로 자유롭게 (예: ["운동","러닝"])
+- type 네 가지만 쓴다: record(이미 일어난 일·생각·다짐) / task(해야 할 일·목표) / event(시각이 정해진 약속·회의) / reminder(반복 알림 요청)
+- 시각이 정해진 약속이면 task가 아니라 event. 예: "내일 3시 회의" → event
+- tags: 한국어 태그 1~3개 (예: ["운동","러닝"], ["회사","시험기"]). 분류는 태그로만 한다.
 - sentiment: plus(진전) / minus(못함·문제) / neutral
 - title 20자 이내, detail 한 문장
 - **날짜는 절대 계산하지 마라.** 사용자가 말한 시간 표현을 due_expression에 그대로 옮겨라 (예: "다음 주", "내일 오전"). 없으면 null.
@@ -385,16 +411,20 @@ ${photoCaptions?'\n[함께 올린 사진]\n'+photoCaptions:''}
 }
 function localDecompose(text, mode){
   const parts=text.split(/(?:,|그리고|했고|하고|했는데|\.|\n)/).map(s=>s.trim()).filter(s=>s.length>3);
-  const pick=s=>/공부|자격증|책|강의|논문|배우|학습|영어/.test(s)?'GROWTH'
-    :/운동|러닝|헬스|걷|잠|수면|병원|약|피곤|컨디션|스트레스/.test(s)?'BODY'
-    :/돈|비용|저축|투자|월급|지출|카드|적금/.test(s)?'MONEY'
-    :/회사|업무|시험|설비|과제|보고|팀|시험기|정비팀/.test(s)?'WORK':'LIFE';
+  const pick=s=>{ const t=[];
+    if(/공부|자격증|책|강의|논문|배우|학습|영어/.test(s)) t.push('공부');
+    if(/운동|러닝|헬스|걷/.test(s)) t.push('운동');
+    if(/잠|수면|피곤|컨디션|스트레스|약/.test(s)) t.push('컨디션');
+    if(/돈|비용|저축|투자|월급|지출|카드|적금/.test(s)) t.push('돈');
+    if(/회사|업무|시험|설비|과제|보고|팀|시험기|정비팀/.test(s)) t.push('회사');
+    if(/가족|부모|친구|아내|남편|아이/.test(s)) t.push('사람');
+    return t.slice(0,2); };
   return { summary:text.slice(0,40), questions:[],
     items:(parts.length?parts:[text]).slice(0,6).map(s=>({
       type:/알려줘|알림|리마인/.test(s)?'reminder'
         :(mode==='event'||/회의|약속|미팅|시\s*에|방문|출장|모임/.test(s))?'event'
         :(mode==='task'||/해야|하자|예약|신청|필요|알아봐/.test(s))?'task':'record',
-      area:pick(s), tags:[], title:s.slice(0,20), detail:s,
+      area:'LIFE', tags:pick(s), title:s.slice(0,20), detail:s,
       sentiment:/못 |못했|안 했|실패|문제|밀렸/.test(s)?'minus':'neutral',
       due_expression:(s.match(/((오늘|내일|모레|이번\s*주|다음\s*주|주말|이번\s*달|다음\s*달|월요일|화요일|수요일|목요일|금요일|토요일|일요일)[^,\.]{0,10}?(오전|오후|저녁|밤)?\s*(\d{1,2}시)?)/)||[null])[0],
       schedule:null, work:null })) };
@@ -410,6 +440,8 @@ const DICT = {
             el:()=>document.getElementById('e-detail') },
   'e-tags':{ get:()=>S.edit?S.edit.tags:'', set:v=>{ if(S.edit) S.edit.tags=v; },
             el:()=>document.getElementById('e-tags') },
+  'e-when':{ get:()=>S.edit?(S.edit.whenText||''):'', set:v=>{ if(S.edit) S.edit.whenText=v; },
+            el:()=>document.getElementById('e-when') },
   ask:{ get:()=>S.ask, set:v=>{S.ask=v;}, el:()=>document.getElementById('askbox') },
   quick:{ get:()=>S.quickText||'', set:v=>{S.quickText=v;}, el:()=>document.getElementById('quick') }
 };
@@ -436,7 +468,10 @@ function startRec(){
     toast('마이크가 차단돼 있습니다. 홈 화면 아이콘으로 연 다음 허용해 주세요.'); render(); } };
   rec.onend=()=>{ micFinal+=micSession; micSession='';
     if(!micStopped){ setTimeout(()=>{ if(!micStopped){ try{ startRec(); }catch(e){} } },300); }
-    else { S.micKey=null; S.listening=false; stopTimer(); render(); } };
+    else { const k=S.micKey; S.micKey=null; S.listening=false; stopTimer();
+      if(k==='e-when') applyWhen();
+      if(k==='quick') { render(); return; }
+      render(); } };
   rec.start();
 }
 function startTimer(){ micStart=Date.now(); micTimer=setInterval(()=>{
@@ -444,6 +479,14 @@ function startTimer(){ micStart=Date.now(); micTimer=setInterval(()=>{
   const s=Math.floor((Date.now()-micStart)/1000);
   el.textContent=p2(Math.floor(s/60))+':'+p2(s%60); },500); }
 function stopTimer(){ clearInterval(micTimer); micTimer=null; }
+function applyWhen(){
+  if(!S.edit) return;
+  const d=resolveDue(S.edit.whenText||'');
+  if(!d.dueAt){ toast('시간 표현을 못 알아들었습니다. 예: 다음 주 화요일 오후 3시'); return; }
+  const L=new Date(d.dueAt-new Date().getTimezoneOffset()*60000).toISOString();
+  S.edit.date=L.slice(0,10); S.edit.time=L.slice(11,16);
+  toast(fmd(d.dueAt)+' '+ftime(d.dueAt)+'로 넣었습니다.');
+}
 function micStop(){ micStopped=true; try{ rec.stop(); }catch(e){ S.micKey=null; S.listening=false; stopTimer(); render(); } }
 function micToggle(key){
   if(S.micKey===key){ micStop(); return; }
@@ -458,11 +501,12 @@ function micToggle(key){
 }
 function toggleMic(){ micToggle('capture'); }
 /* 작은 음성 버튼 */
-function micBtn(key,label){
+function micBtn(key){
   const on=S.micKey===key;
-  return `<button class="pill sm tap ${on?'on':''}" data-act="dictate" data-v="${key}"
-    style="${on?'background:var(--red);border-color:var(--red);color:#fff':''}">
-    ${on?'● 정지 <span id="mictime" class="mono">00:00</span>':'🎙️ '+(label||'말하기')}</button>`;
+  return `<button class="micbtn tap ${on?'on':''}" data-act="dictate" data-v="${key}" aria-label="음성 입력">
+    ${on?'<span class="stopsq"></span>'
+      :'<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>'}
+  </button>`;
 }
 
 /* ================= 사진 / EXIF ================= */
@@ -642,7 +686,7 @@ async function decompose(){
   }catch(e){ r=localDecompose(text||'사진 기록', c.mode); toast('AI 오류 — 규칙으로 나눴습니다. ('+e.message+')'); }
   r.items.forEach(i=>{
     i._keep=true;
-    if(!AREA[i.area]) i.area=remapArea(i.area,i);
+    i.area='LIFE';
     if(!TYPE[i.type]) i.type='record';
     if(!Array.isArray(i.tags)) i.tags=[];
     const due=resolveDue(i.due_expression || (i.schedule&&i.schedule.when));
@@ -725,15 +769,14 @@ function entityIndex(){
 function patterns(){
   const now=Date.now(), out=[];
   const inWin=(i,f,t)=>{const x=i.occurredAt||i.createdAt; return x>=now-f*DAY && x<now-t*DAY;};
-  const cnt=(a,f,t)=>S.items.filter(i=>i.area===a&&inWin(i,f,t)).length;
-  const drops=[];
-  AORD.forEach(a=>{ const r=cnt(a,14,0), p=cnt(a,28,14);
-    if(p>=3 && r<=Math.floor(p*0.5)) drops.push({a,r,p}); });
+  const tagCnt=(f,t)=>{const c={};
+    S.items.filter(i=>inWin(i,f,t)).forEach(i=>(i.tags||[]).forEach(g=>c[g]=(c[g]||0)+1)); return c;};
+  const r=tagCnt(14,0), p=tagCnt(28,14);
+  const drops=Object.keys(p).filter(g=>p[g]>=3&&(r[g]||0)<=Math.floor(p[g]*0.5));
   if(drops.length>=2)
-    out.push({level:'yellow',text:drops.map(d=>AREA[d.a]).join('과 ')+' 활동이 동시에 줄었습니다. '+
-      drops.map(d=>AREA[d.a]+' '+d.p+'→'+d.r+'건').join(', ')+'.'});
-  else drops.forEach(d=>out.push({level:'yellow',
-    text:AREA[d.a]+' 기록이 2주 전 '+d.p+'건에서 최근 '+d.r+'건으로 줄었습니다.'}));
+    out.push({level:'yellow',text:drops.slice(0,3).map(g=>'#'+g).join(', ')+' 관련 기록이 함께 줄었습니다.'});
+  else drops.slice(0,1).forEach(g=>out.push({level:'yellow',
+    text:'#'+g+' 기록이 2주 전 '+p[g]+'건에서 최근 '+(r[g]||0)+'건으로 줄었습니다.'}));
 
   const neg=(f,t)=>{const w=S.items.filter(i=>inWin(i,f,t)&&i.type==='record');
     return w.length? w.filter(i=>i.sentiment==='minus').length/w.length : 0;};
@@ -745,13 +788,9 @@ function patterns(){
   if(stalled.length>=2) out.push({level:'red',
     text:stalled.length+'건이 2주 넘게 완료 기록 없이 남아 있습니다.'});
 
-  S.items.filter(i=>i.type==='goal'&&i.status!=='achieved').forEach(g=>{
-    const tag=(g.tags||[])[0];
-    if(!tag)return;
-    const recent=S.items.filter(i=>i.id!==g.id&&(i.tags||[]).includes(tag)&&inWin(i,30,0)).length;
-    if(recent===0) out.push({level:'yellow',
-      text:'목표 "'+g.title+'"과 관련된 기록이 최근 30일간 없습니다.'});
-  });
+  const total=(f,t)=>S.items.filter(i=>inWin(i,f,t)).length;
+  if(total(28,14)>=6 && total(14,0)<=Math.floor(total(28,14)*0.4))
+    out.push({level:'yellow',text:'전체 기록량이 크게 줄었습니다. 바쁜 시기일 수 있습니다.'});
   return out.slice(0,3);
 }
 
@@ -795,13 +834,12 @@ function intervention(){
 function view(){ return ({home,calendar,plan,assist,library,review,settings}[S.tab]||home)(); }
 
 function home(){
-  const st=areaStat(), d=new Date(), iv=intervention(), tp=todayPlan();
+  const d=new Date(), iv=intervention(), tp=todayPlan();
   const today=sod(Date.now());
   const evs=S.items.filter(i=>(i.type==='event')&&i.dueAt&&sod(i.dueAt)===today)
     .sort((a,b)=>a.dueAt-b.dueAt);
   const dueToday=S.items.filter(i=>i.type==='task'&&i.status==='open'&&i.dueAt&&sod(i.dueAt)<=today);
   const openTasks=S.items.filter(i=>i.type==='task'&&i.status==='open').length;
-  const sig=a=> st[a].dir==='down' ? (st[a].n===0?'🔴':'🟡') : '🟢';
   const tile=(act,v,icon,title,sub)=>`<button class="tile tap" data-act="${act}"${v?` data-v="${v}"`:''}>
     <span class="ti">${icon}</span><span class="tt">${title}</span><span class="ts">${sub}</span></button>`;
 
@@ -836,11 +874,11 @@ function home(){
     ${evs.map(e=>`<div class="row" data-act="edit" data-id="${e.id}">
       <span class="mono" style="width:52px;flex:0 0 52px;font-weight:700;color:var(--blue)">${ftime(e.dueAt)}</span>
       <div style="flex:1"><div style="font-weight:600">${esc(e.title)}</div>
-        <div class="small">${AREA[e.area]} · 일정</div></div></div>`).join('')}
+        <div class="small">일정</div></div></div>`).join('')}
     ${tp.must.map(t=>`<div class="row">
       <button class="cb tap" data-act="toggle" data-id="${t.id}" aria-label="완료"></button>
       <div style="flex:1" data-act="edit" data-id="${t.id}"><div style="font-weight:600">${esc(t.title)}</div>
-        <div class="small">${AREA[t.area]}${t.dueAt?' · '+fmd(t.dueAt):''} · 먼저 할 것</div></div></div>`).join('')}
+        <div class="small">${t.dueAt?fmd(t.dueAt)+' · ':''}먼저 할 것</div></div></div>`).join('')}
   </div>`:''}
 
   ${iv?`<div class="sec"><h3>AI가 짚은 것</h3>
@@ -852,7 +890,9 @@ function home(){
   <div class="sec"><div class="sechead"><h3 style="margin:0">지금 나는</h3>
     <button class="pill sm tap" data-act="tab" data-v="review">돌아보기</button></div>
     <div class="sigrow">
-      ${AORD.map(a=>`<div class="sigcell"><span>${sig(a)}</span><b>${AREA[a]}</b></div>`).join('')}
+      <div class="sigcell"><span>${S.items.filter(i=>(i.occurredAt||i.createdAt)>Date.now()-7*DAY).length}</span><b>이번 주 기록</b></div>
+      <div class="sigcell"><span>${S.items.filter(i=>i.type==='task'&&i.status==='done'&&i.doneAt>Date.now()-7*DAY).length}</span><b>끝낸 일</b></div>
+      <div class="sigcell"><span>${openTasks}</span><b>남은 일</b></div>
     </div>
     <div class="card fill" style="margin-top:12px;line-height:1.85">
       ${S.cache.today?esc(S.cache.today):`<span class="sub">AI 한마디를 아직 받지 않았습니다.</span>`}
@@ -904,7 +944,7 @@ function timelineBody(){
         ${items.map(i=>`<div style="display:flex;gap:11px;padding:4px 0">
           <span class="dot" style="background:${i.sentiment==='minus'?'var(--red)':i.sentiment==='plus'?'var(--green)':'var(--ink3)'}"></span>
           <div style="flex:1"><div style="font-size:17px;font-weight:600">${esc(i.title)}</div>
-            <div class="small">${ftime(i.createdAt)} · ${AREA[i.area]} · ${TYPE[i.type]}</div>
+            <div class="small">${ftime(i.createdAt)} · ${TYPE[i.type]}</div>
             ${S.open===sid?`<div class="fade"><div class="sub" style="margin-top:6px">${esc(i.detail||'')}</div>
               ${(i.tags||[]).map(t=>`<span class="tagchip">#${esc(t)}</span>`).join('')}
               ${(i.entities||[]).map(en=>`<span class="tagchip" style="background:#EAF0FE;color:var(--blue)">${esc(en.name)}</span>`).join('')}
@@ -977,86 +1017,94 @@ function calendar(){
       return `<div class="row" data-act="edit" data-id="${i.id}">
         <span class="dot" style="background:${i.type==='event'?'var(--blue)':i.type==='task'?'var(--amber)':i.type==='reminder'?'var(--green)':'var(--ink3)'}"></span>
         <div style="flex:1"><div style="font-weight:600">${esc(i.title)}</div>
-          <div class="small">${ftime(t)} · ${AREA[i.area]} · ${TYPE[i.type]}${i.status==='done'?' · 완료':''}</div></div>
+          <div class="small">${ftime(t)} · ${TYPE[i.type]}${(i.tags||[]).slice(0,2).map(x=>' · #'+esc(x)).join('')}${i.status==='done'?' · 완료':''}</div></div>
         <button class="tap" data-act="edit" data-id="${i.id}" style="background:none;border:none;color:var(--ink3);font-size:15px;padding:4px 6px">고치기</button>
       </div>`;}).join('')
       : '<p class="sub">이날은 비어 있습니다. 위 버튼으로 말해서 넣어 보세요.</p>'}
     <div style="height:14px"></div>
     <button class="btn ghost tap" data-act="newevent" data-v="${sel}">＋ 이날 일정 직접 추가</button>
+    <div style="height:10px"></div>
+    <button class="btn ghost tap" data-act="icsall">폰 캘린더로 넘겨서 알림 받기</button>
   </div>`;
 }
 
 function plan(){
   const tasks=S.items.filter(i=>i.type==='task');
   const open=tasks.filter(t=>t.status==='open');
-  const need=open.filter(t=>t.needsConfirm);
-  const done=tasks.filter(t=>t.status==='done').sort((a,b)=>(b.doneAt||0)-(a.doneAt||0)).slice(0,5);
-  const goals=S.items.filter(i=>i.type==='goal');
+  const evs=S.items.filter(i=>i.type==='event'&&i.dueAt&&i.status!=='done');
   const rems=S.items.filter(i=>i.type==='reminder'&&i.status!=='done');
-  const tp=todayPlan();
-  const row=(t,tone)=>`<div class="row">
+  const done=tasks.filter(t=>t.status==='done').sort((a,b)=>(b.doneAt||0)-(a.doneAt||0)).slice(0,5);
+  const today=sod(Date.now());
+  const g={ over:[], today:[], week:[], none:[], ask:[] };
+  open.forEach(t=>{
+    if(t.needsConfirm) g.ask.push(t);
+    else if(!t.dueAt) g.none.push(t);
+    else if(sod(t.dueAt)<today) g.over.push(t);
+    else if(sod(t.dueAt)===today) g.today.push(t);
+    else if(t.dueAt<Date.now()+7*DAY) g.week.push(t);
+    else g.none.push(t);
+  });
+  const row=t=>`<div class="trow">
     <button class="cb tap ${t.status==='done'?'on':''}" data-act="toggle" data-id="${t.id}" aria-label="완료"></button>
-    <div style="flex:1" data-act="edit" data-id="${t.id}">
-      <div style="font-size:17.5px;font-weight:600;${t.status==='done'?'text-decoration:line-through;color:var(--ink3)':''}">${esc(t.title)}</div>
-      <div class="small" style="${tone==='red'?'color:var(--red)':''}">${AREA[t.area]}${t.dueAt?' · '+fmd(t.dueAt)+' '+ftime(t.dueAt)+(t.duePrecision==='week'?' 무렵':''):' · 기한 없음'}</div>
-      ${(t.tags||[]).map(x=>`<span class="tagchip">#${esc(x)}</span>`).join('')}</div>
-    <button class="tap" data-act="edit" data-id="${t.id}" style="background:none;border:none;color:var(--ink3);font-size:15px;padding:4px 6px">고치기</button></div>`;
+    <div style="flex:1;min-width:0" data-act="edit" data-id="${t.id}">
+      <div class="tt2 ${t.status==='done'?'off':''}">${esc(t.title)}</div>
+      <div class="tmeta">${t.dueAt?fmd(t.dueAt)+' '+ftime(t.dueAt):'기한 없음'}
+        ${(t.tags||[]).slice(0,2).map(x=>'· #'+esc(x)).join(' ')}</div></div>
+    <button class="tap" data-act="edit" data-id="${t.id}" style="background:none;border:none;color:var(--ink3);padding:6px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L20 8l-4-4L4 16z"/></svg></button></div>`;
+  const block=(title,color,items,extra)=>items.length?`<div class="pblock">
+    <div class="phead" style="border-color:${color}"><b>${title}</b><span>${items.length}</span></div>
+    ${items.map(row).join('')}${extra||''}</div>`:'';
+
   return `<div style="padding-top:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <h2 style="font-size:22px">할 일</h2>
       <button class="pill sm tap" data-act="tab" data-v="calendar">캘린더</button></div>
-    <button class="btn dark tap" data-act="capture-task" style="margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:10px">
+
+    <button class="btn dark tap" data-act="capture-task"
+      style="margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:10px;font-size:18px;padding:19px">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
-      말해서 할 일 넣기</button>
-    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
-      <input type="text" id="quick" placeholder="한 줄 적기" style="flex:1" value="${esc(S.quickText||'')}">
-      ${micBtn('quick','말로')}
+      말해서 넣기</button>
+    <div style="display:flex;gap:8px;margin-bottom:18px">
+      <input type="text" id="quick" placeholder="한 줄 적기 (내일 3시처럼 시간도 됩니다)" style="flex:1" value="${esc(S.quickText||'')}">
       <button class="pill tap" data-act="quick" style="padding:0 16px">추가</button></div>
 
-    ${need.length?`<div class="sec"><h3 style="color:var(--blue)">날짜를 정해주세요</h3>
-      ${need.map(t=>`<div class="card" style="margin-bottom:10px">
-        <div style="font-weight:700">${esc(t.title)}</div>
-        <div class="small" style="margin:4px 0 12px">현재 ${t.dueAt?fmd(t.dueAt)+' 무렵으로 임시 설정':'기한 없음'}</div>
+    ${g.ask.length?`<div class="pblock">
+      <div class="phead" style="border-color:var(--blue)"><b>날짜 정하기</b><span>${g.ask.length}</span></div>
+      ${g.ask.map(t=>`<div class="card" style="margin:10px 0">
+        <div style="font-weight:700;font-size:17px">${esc(t.title)}</div>
+        <div class="small" style="margin:4px 0 12px">${t.dueAt?fmd(t.dueAt)+' 무렵으로 임시':'기한 없음'}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${[['today','오늘'],['tomorrow','내일'],['weekend','주말'],['nextmon','다음 주 월'],['none','미정']]
+          ${[['today','오늘'],['tomorrow','내일'],['weekend','주말'],['nextmon','다음 주 월']]
             .map(([v,l])=>`<button class="pill sm tap" data-act="setdue" data-id="${t.id}" data-v="${v}">${l}</button>`).join('')}
-          <button class="pill sm tap" data-act="edit" data-id="${t.id}">직접 고르기</button>
-        </div></div>`).join('')}</div>`:''}
+          <button class="pill sm tap" data-act="edit" data-id="${t.id}">직접</button></div></div>`).join('')}</div>`:''}
 
-    <div class="sec"><h3>오늘</h3>
-      ${tp.must.length?`<p class="small" style="font-weight:700;color:var(--red);margin-bottom:4px">반드시</p>${tp.must.map(t=>row(t,'red')).join('')}`:''}
-      ${tp.good.length?`<p class="small" style="font-weight:700;margin:16px 0 4px">하면 좋은 것</p>${tp.good.map(t=>row(t)).join('')}`:''}
-      ${!tp.must.length&&!tp.good.length?'<p class="sub">오늘 꼭 해야 할 일은 없습니다.</p>':''}
-    </div>
+    ${block('지났음','var(--red)',g.over)}
+    ${block('오늘','var(--ink)',g.today)}
+    ${block('이번 주','var(--blue)',g.week)}
+    ${block('기한 없음','var(--ink3)',g.none)}
 
-    ${tp.later.length?`<div class="sec"><div class="sechead"><h3 style="margin:0">오늘 안 해도 되는 것</h3>
-      <span class="small">${tp.later.length}건</span></div>${tp.later.map(t=>row(t)).join('')}</div>`:''}
+    ${evs.length?`<div class="pblock">
+      <div class="phead" style="border-color:var(--blue)"><b>다가오는 일정</b><span>${evs.length}</span></div>
+      ${evs.sort((a,b)=>a.dueAt-b.dueAt).slice(0,5).map(e=>`<div class="trow" data-act="edit" data-id="${e.id}">
+        <span class="mono" style="width:70px;flex:0 0 70px;color:var(--blue);font-weight:700">${fmd(e.dueAt)}</span>
+        <div style="flex:1"><div class="tt2">${esc(e.title)}</div>
+          <div class="tmeta">${ftime(e.dueAt)}</div></div></div>`).join('')}</div>`:''}
 
-    ${rems.length?`<div class="sec"><h3>알림</h3>
-      ${rems.map(r=>`<div class="row"><span class="dot" style="background:var(--amber)"></span>
-        <div style="flex:1" data-act="edit" data-id="${r.id}"><div style="font-weight:600">${esc(r.title)}</div>
-          <div class="small">${r.timeType==='recurring'?'매일 '+(r.time||'')
-            :(r.fireAt?fmd(r.fireAt)+' '+ftime(r.fireAt):'시각 미정')}${r.streak?' · 연속 '+r.streak+'회':''}</div></div>
-        <button class="tap" data-act="edit" data-id="${r.id}" style="background:none;border:none;color:var(--ink3);font-size:15px;padding:4px 6px">고치기</button>
-      </div>`).join('')}</div>`:''}
+    ${rems.length?`<div class="pblock">
+      <div class="phead" style="border-color:var(--green)"><b>알림</b><span>${rems.length}</span></div>
+      ${rems.map(r=>`<div class="trow">
+        <div style="flex:1" data-act="edit" data-id="${r.id}"><div class="tt2">${esc(r.title)}</div>
+          <div class="tmeta">${r.timeType==='recurring'?'매일 '+(r.time||''):(r.fireAt?fmd(r.fireAt)+' '+ftime(r.fireAt):'시각 미정')}</div></div>
+        <button class="pill sm tap" data-act="ics" data-id="${r.id}">폰 알림</button></div>`).join('')}
+      <p class="small" style="margin-top:8px">‘폰 알림’을 누르면 아이폰 캘린더에 등록돼 앱이 꺼져 있어도 울립니다.</p></div>`:''}
 
-    ${goals.length?`<div class="sec"><h3>목표</h3>
-      ${goals.map(g=>`<div class="card" style="margin-bottom:10px">
-        <div class="small">${AREA[g.area]} · ${rel(g.createdAt)} 세움</div>
-        <div style="font-size:19px;font-weight:700;margin:6px 0 4px" data-act="edit" data-id="${g.id}">${esc(g.title)}</div>
-        <div class="sub">${esc(g.detail||'')}</div>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <button class="pill sm tap" data-act="breakdown" data-id="${g.id}">${S.busy&&S.goalPlan&&S.goalPlan.id===g.id?'쪼개는 중…':'행동으로 쪼개기'}</button>
-          <button class="pill sm tap" data-act="edit" data-id="${g.id}">고치기</button></div>
-        ${S.goalPlan&&S.goalPlan.id===g.id&&S.goalPlan.actions?`<div class="fade" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
-          ${S.goalPlan.actions.map((a,ai)=>`<div class="row" style="border-top:none">
-            <div style="flex:1"><div style="font-weight:600">${esc(a.title||a)}</div>
-              <div class="small">${esc(a.when||'')}</div></div>
-            <button class="pill sm tap" data-act="addaction" data-id="${g.id}" data-i="${ai}">할 일로</button></div>`).join('')}
-        </div>`:''}
-      </div>`).join('')}</div>`:''}
+    ${done.length?`<div class="pblock">
+      <div class="phead" style="border-color:var(--green)"><b>끝냄</b><span>${done.length}</span></div>
+      ${done.map(row).join('')}</div>`:''}
 
-    ${done.length?`<div class="sec"><h3>최근 끝낸 일</h3>${done.map(t=>row(t)).join('')}</div>`:''}</div>`;
+    ${!open.length&&!rems.length&&!evs.length?'<p class="sub">남은 게 없습니다. 말해서 넣어 보세요.</p>':''}
+  </div>`;
 }
 
 function assist(){
@@ -1075,7 +1123,7 @@ function assist(){
     <div class="askbar">
       <textarea id="askbox" rows="2" placeholder="물어보기">${esc(S.ask)}</textarea>
       <div style="display:flex;gap:8px;margin-top:8px">
-        ${micBtn('ask','말하기')}
+        ${micBtn('ask')}
         <button class="pill tap" data-act="askai" style="flex:1;text-align:center">${S.busy?'…':'보내기'}</button>
         ${S.chat.length?'<button class="pill sm tap" data-act="chatclear">지우기</button>':''}
       </div>
@@ -1099,12 +1147,13 @@ function library(){
 }
 
 function mindBody(){
-  const ideas=S.items.filter(i=>i.type==='idea').sort((a,b)=>b.createdAt-a.createdAt);
+  const ideas=S.items.filter(i=>(i.tags||[]).includes('생각')||(i.tags||[]).includes('원칙')||(i.tags||[]).includes('목표'))
+    .sort((a,b)=>b.createdAt-a.createdAt);
   const by={}; ideas.forEach(m=>{const y=new Date(m.createdAt).getFullYear();(by[y]=by[y]||[]).push(m);});
   return `<p class="sub" style="margin:12px 0 6px">생각과 원칙은 시간에 따라 달라집니다. AI는 가장 최근 기준을 먼저 봅니다.</p>`+
     (ideas.length? Object.keys(by).sort((a,b)=>b-a).map(y=>`<div class="datehead"><b>${y}년</b><span class="small">${by[y].length}개</span></div>
       ${by[y].map(m=>`<div class="card" style="margin:12px 0" data-act="edit" data-id="${m.id}">
-        <div class="small">${fdate(m.createdAt)} · ${AREA[m.area]}</div>
+        <div class="small">${fdate(m.createdAt)}</div>
         <div style="font-size:19px;font-weight:700;margin:6px 0 4px">${esc(m.title)}</div>
         <div class="sub">${esc(m.detail||'')}</div></div>`).join('')}`).join('')
       : '<p class="sub" style="margin-top:16px">아직 없습니다. 🎙️로 다짐이나 깨달음을 말해 보세요.</p>');
@@ -1122,7 +1171,7 @@ function graphBody(){
       ${top.length?top.map(([k,v])=>`<button class="pill sm tap ${S.ent===k?'on':''}" data-act="ent" data-v="${esc(k)}">${esc(k)} ${v.count}</button>`).join('')
         :'<p class="sub">아직 연결할 게 없습니다. 기록이 쌓이면 자동으로 생깁니다.</p>'}</div>
     ${sel?`<div class="sec fade"><h3>${esc(S.ent)} · ${sel.count}건</h3>
-      <p class="small" style="margin-bottom:10px">주로 ${Object.entries(sel.areas).sort((a,b)=>b[1]-a[1]).map(([a,n])=>AREA[a]+'('+n+')').join(', ')}</p>
+
       ${sel.ids.slice(-12).reverse().map(id=>{const it=S.items.find(x=>x.id===id); if(!it)return '';
         return `<div class="row" data-act="edit" data-id="${it.id}"><span class="dot"></span>
           <div style="flex:1"><div style="font-weight:600">${esc(it.title)}</div>
@@ -1135,7 +1184,7 @@ function graphBody(){
 }
 
 function review(){
-  const t=areaStat(), ins=S.cache.insight, pat=patterns();
+  const ins=S.cache.insight, pat=patterns();
   return `<div style="padding-top:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <h2 style="font-size:22px">돌아보기</h2>
@@ -1144,11 +1193,6 @@ function review(){
     ${pat.length?`<div class="sec"><h3>AI가 발견한 것</h3>
       ${pat.map(x=>`<div class="${x.level==='red'?'warn':'info'}" style="margin-bottom:10px;font-size:15.5px;line-height:1.7">${esc(x.text)}</div>`).join('')}
       <p class="small">묻지 않아도 기록에서 찾아낸 것들입니다.</p></div>`:''}
-
-    <div class="sec"><h3>영역별 방향</h3>
-      ${AORD.map(a=>`<div class="row" style="align-items:center">
-        <span style="flex:1;font-size:18px;font-weight:600">${AREA[a]}</span>
-        <span style="font-weight:700;color:${ACOL[t[a].dir]}">${ARR[t[a].dir]} ${AWORD[t[a].dir]}</span></div>`).join('')}</div>
 
     <div class="sec"><h3>많이 나온 주제 (30일)</h3>
       ${topTags(null,30).length?topTags(null,30).map(([k,v])=>
@@ -1201,8 +1245,11 @@ function settings(){
     </div>
 
     <div class="card" style="margin-bottom:14px"><h3>알림</h3>
-      <div class="row" style="border-top:none"><div style="flex:1"><div style="font-weight:600">브라우저 알림</div>
-        <div class="small">앱이 열려 있을 때만 울립니다</div></div>
+      <p class="sub" style="margin-bottom:12px">웹앱은 꺼져 있을 때 스스로 알림을 띄우지 못합니다.
+        대신 일정·알림을 아이폰 캘린더로 넘기면 잠금화면에서 그대로 울립니다.</p>
+      <button class="btn primary tap" data-act="icsall">일정·알림 폰 캘린더로 넘기기</button>
+      <div class="row" style="margin-top:10px"><div style="flex:1"><div style="font-weight:600">앱 안 알림</div>
+        <div class="small">앱이 열려 있을 때만</div></div>
         <button class="pill sm tap ${S.cfg.notify?'on':''}" data-act="toggleNotify">${S.cfg.notify?'켜짐':'꺼짐'}</button></div>
     </div>
 
@@ -1226,7 +1273,7 @@ function openEdit(id){
   const loc = t => new Date(t - new Date().getTimezoneOffset()*60000).toISOString();
   S.edit={ id, type:it.type, area:it.area, title:it.title, detail:it.detail||'',
     tags:(it.tags||[]).join(', '),
-    date: ts? loc(ts).slice(0,10) : '',
+    whenText:'', date: ts? loc(ts).slice(0,10) : '',
     time: ts? loc(ts).slice(11,16) : (it.time||''),
     timeType: it.timeType||'once' };
   render();
@@ -1243,22 +1290,18 @@ function editModal(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
       ${TORD.map(t=>`<button class="pill sm tap ${e.type===t?'on':''}" data-act="ed-type" data-v="${t}">${TYPE[t]}</button>`).join('')}</div>
 
-    <p class="small" style="font-weight:700;margin-bottom:8px">영역</p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
-      ${AORD.map(a=>`<button class="pill sm tap ${e.area===a?'on':''}" data-act="ed-area" data-v="${a}">${AREA[a]}</button>`).join('')}</div>
-    <p class="small" style="margin:-10px 0 18px">${esc(AHINT[e.area]||'')}</p>
 
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <p class="small" style="font-weight:700">제목</p>${micBtn('e-title','말로')}</div>
-    <input type="text" id="e-title" value="${esc(e.title)}">
+    <p class="small" style="font-weight:700;margin-bottom:8px">제목</p>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="e-title" value="${esc(e.title)}" style="flex:1">${micBtn('e-title')}</div>
     <div style="height:14px"></div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <p class="small" style="font-weight:700">내용</p>${micBtn('e-detail','말로')}</div>
-    <textarea id="e-detail" rows="4">${esc(e.detail)}</textarea>
+    <p class="small" style="font-weight:700;margin-bottom:8px">내용</p>
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      <textarea id="e-detail" rows="4" style="flex:1">${esc(e.detail)}</textarea>${micBtn('e-detail')}</div>
     <div style="height:14px"></div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <p class="small" style="font-weight:700">태그 (쉼표로 구분)</p>${micBtn('e-tags','말로')}</div>
-    <input type="text" id="e-tags" value="${esc(e.tags)}" placeholder="운동, 러닝">
+    <p class="small" style="font-weight:700;margin-bottom:8px">태그 (쉼표로 구분)</p>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="e-tags" value="${esc(e.tags)}" placeholder="운동, 러닝" style="flex:1">${micBtn('e-tags')}</div>
     <div style="height:14px"></div>
 
     ${e.type==='reminder'?`<p class="small" style="font-weight:700;margin-bottom:8px">반복</p>
@@ -1268,6 +1311,9 @@ function editModal(){
 
     <p class="small" style="font-weight:700;margin-bottom:8px">
       ${isPlan?'기한 날짜 / 시각':'일어난 날짜 / 시각'}</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <input type="text" id="e-when" value="${esc(e.whenText||'')}" placeholder="말로: 다음 주 화요일 오후 3시" style="flex:1">
+      ${micBtn('e-when')}</div>
     <div style="display:flex;gap:10px">
       <input type="date" id="e-date" value="${e.date}" style="flex:1"
         ${e.type==='reminder'&&e.timeType==='recurring'?'disabled':''}>
@@ -1300,8 +1346,7 @@ function captureModal(){
         </div></div>`).join('')}
       ${S.result.items.map((i,idx)=>`<div class="card" style="margin-bottom:11px;opacity:${i._keep?1:.45}">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-          <button class="pill sm on tap" data-act="cyc-area" data-i="${idx}">${AREA[i.area]}</button>
-          <button class="pill sm tap" data-act="cyc-type" data-i="${idx}">${TYPE[i.type]}</button>
+          <button class="pill sm on tap" data-act="cyc-type" data-i="${idx}">${TYPE[i.type]}</button>
           ${i.sentiment==='minus'?'<span class="small" style="color:var(--red);font-weight:700">주의</span>':''}
           <button class="pill sm tap" data-act="keep" data-i="${idx}" style="margin-left:auto">${i._keep?'제외':'포함'}</button></div>
         <div style="font-size:19px;font-weight:700;margin-bottom:5px">${esc(i.title)}</div>
@@ -1359,9 +1404,9 @@ function render(){
     document.body.appendChild(d.firstElementChild); }
   if(S.edit){ const d=document.createElement('div'); d.innerHTML=editModal();
     document.body.appendChild(d.firstElementChild);
-    ['title','detail','tags','date','time'].forEach(f=>{
+    ['title','detail','tags','date','time','when'].forEach(f=>{
       const el=document.getElementById('e-'+f);
-      if(el) el.oninput=ev=>{ S.edit[f]=ev.target.value; }; }); }
+      if(el) el.oninput=ev=>{ S.edit[f==='when'?'whenText':f]=ev.target.value; }; }); }
   const ta=document.getElementById('draft');
   if(ta) ta.oninput=e=>{ S.capture.transcript=e.target.value;
     micBase=e.target.value?e.target.value.trim()+' ':''; micFinal='';micSession='';
@@ -1412,17 +1457,16 @@ function setDue(id,v){
   save.items(); render(); toast('기한을 정했습니다.');
 }
 function compactItems(){ return S.items.slice(-40).map(i=>
-  new Date(i.occurredAt||i.createdAt).toISOString().slice(0,10)+'|'+AREA[i.area]+'|'+TYPE[i.type]+'|'+
+  new Date(i.occurredAt||i.createdAt).toISOString().slice(0,10)+'|'+((i.tags||[]).join('/')||'-')+'|'+TYPE[i.type]+'|'+
   (i.sentiment==='plus'?'+':i.sentiment==='minus'?'-':'=')+'|'+i.title).join('\n'); }
 async function aiToday(){
   if(!hasKey()){S.tab='settings';render();toast('먼저 AI를 연결하세요.');return;}
   if(S.busy)return; S.busy=true; render();
-  try{ const t=areaStat();
+  try{
     S.cache.today=await callAI(
 `너는 사용자의 개인 AI 매니저다. 아래 기록을 보고 지금 상태를 2~3문장으로 담백하게 말해라.
 칭찬만 하지 말고 밀리는 영역이 있으면 분명히 짚어라. 이모지·불릿 없이 평서문만.
 
-영역: ${AORD.map(a=>AREA[a]+':'+AWORD[t[a].dir]).join(' / ')}
 ${compactItems()}`);
     S.cache.todayAt=Date.now(); save.cache();
   }catch(e){toast('실패: '+e.message);} S.busy=false; render();
@@ -1464,7 +1508,7 @@ function pushChat(role,text){ S.chat.push({role,text,at:Date.now()});
 
 /* 연결 없이도 답하는 로컬 응답 */
 function localAnswer(kind){
-  const tp=todayPlan(), st=areaStat();
+  const tp=todayPlan();
   if(kind==='plan'){
     if(!tp.must.length&&!tp.good.length) return '오늘 꼭 해야 할 일은 없습니다. 밀린 것도 없고요.';
     let t='';
@@ -1474,17 +1518,19 @@ function localAnswer(kind){
     return t;
   }
   if(kind==='status'){
-    const pat=patterns();
-    let t=AORD.map(a=>AREA[a]+' '+ARR[st[a].dir]+' '+AWORD[st[a].dir]).join('\n');
+    const pat=patterns(); const tt=topTags(null,14);
+    let t='최근 2주 많이 나온 것: '+(tt.length?tt.slice(0,4).map(([k,v])=>'#'+k+' '+v).join(', '):'기록 없음');
+    t+='\n남은 할 일 '+S.items.filter(i=>i.type==='task'&&i.status==='open').length+'건.';
     if(pat.length) t+='\n\n'+pat.map(x=>'· '+x.text).join('\n');
+    else t+='\n\n특별히 걸리는 건 없습니다.';
     return t;
   }
   const wk=S.items.filter(i=>(i.occurredAt||i.createdAt)>Date.now()-7*DAY);
   if(!wk.length) return '이번 주 기록이 아직 없습니다.';
-  const byA={}; wk.forEach(i=>{byA[i.area]=(byA[i.area]||0)+1;});
+  const byT={}; wk.forEach(i=>(i.tags||[]).forEach(g=>byT[g]=(byT[g]||0)+1));
   const done=wk.filter(i=>i.type==='task'&&i.status==='done').length;
   return '이번 주 기록 '+wk.length+'건입니다.\n'+
-    Object.entries(byA).sort((a,b)=>b[1]-a[1]).map(([a,n])=>AREA[a]+' '+n+'건').join(' · ')+
+    Object.entries(byT).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([a,n])=>'#'+a+' '+n).join(' · ')+
     (done?'\n끝낸 일 '+done+'건.':'') +
     '\n\n' + wk.filter(i=>i.type==='record').slice(-5).map(i=>'· '+i.title).join('\n');
 }
@@ -1499,8 +1545,8 @@ async function askAI(){
     render(); return; }
   if(S.busy)return; S.busy=true; render();
   try{
-    const values=S.items.filter(i=>i.type==='idea').slice(-10).map(i=>'- '+i.title+': '+(i.detail||'')).join('\n');
-    const goals=S.items.filter(i=>i.type==='goal').map(i=>'- '+i.title).join('\n');
+    const values=S.items.filter(i=>(i.tags||[]).includes('생각')).slice(-10).map(i=>'- '+i.title+': '+(i.detail||'')).join('\n');
+    const goals=S.items.filter(i=>(i.tags||[]).includes('목표')).map(i=>'- '+i.title).join('\n');
     const hist=S.chat.slice(-6,-1).map(m=>(m.role==='me'?'사용자: ':'나: ')+m.text).join('\n');
     const ans=await callAI(
 `너는 이 사용자를 오래 지켜본 개인 비서다. 일반론이 아니라 아래 기록을 근거로 답한다.
@@ -1524,13 +1570,11 @@ async function simulate(){
   if(!hasKey()){S.tab='settings';render();toast('먼저 AI를 연결하세요.');return;}
   if(S.busy)return; S.busy=true; render();
   try{
-    const st=areaStat();
     S.sim=await callAI(
 `아래는 사용자의 최근 기록이다. 지금 패턴이 1년 이어질 경우 어떤 상태가 될지 영역별로 추정해라.
-영역: 나 / 일 / 돈 / 관계·삶. 각 1~2문장. 근거 없는 수치는 만들지 말고 기록에 있는 경향만 써라.
+자주 나온 주제(태그) 기준으로 3~4가지. 각 1~2문장. 근거 없는 수치는 만들지 말고 기록에 있는 경향만 써라.
 마지막에 "가장 바꿀 가치가 있는 것 하나"를 한 문장으로 덧붙여라. 이모지·불릿 금지.
 
-현재 추세: ${AORD.map(a=>AREA[a]+':'+AWORD[st[a].dir]).join(' / ')}
 ${memoryBlock()}`);
   }catch(e){toast('실패: '+e.message);}
   S.busy=false; render();
@@ -1552,6 +1596,37 @@ ${compactItems()}`));
   }catch(e){ S.goalPlan=null; toast('실패: '+e.message); }
   S.busy=false; render();
 }
+/* 아이폰 캘린더로 내보내 앱이 꺼져 있어도 알림이 오게 한다 */
+function icsTime(t){ return new Date(t).toISOString().replace(/[-:]/g,'').split('.')[0]+'Z'; }
+function icsBody(list){
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Life OS//KO','CALSCALE:GREGORIAN'];
+  list.forEach(i=>{
+    let start=null, rule=null;
+    if(i.type==='reminder'){
+      if(i.timeType==='recurring'&&i.time){
+        const [h,m]=i.time.split(':').map(Number);
+        const d=new Date(); d.setHours(h,m||0,0,0); if(d.getTime()<Date.now()) d.setDate(d.getDate()+1);
+        start=d.getTime(); rule='RRULE:FREQ=DAILY';
+      } else start=i.fireAt;
+    } else start=i.dueAt||i.occurredAt;
+    if(!start) return;
+    L.push('BEGIN:VEVENT','UID:'+i.id+'@lifeos','DTSTAMP:'+icsTime(Date.now()),
+      'DTSTART:'+icsTime(start),'DTEND:'+icsTime(start+30*60000),
+      'SUMMARY:'+String(i.title).replace(/[\n,;]/g,' '));
+    if(i.detail) L.push('DESCRIPTION:'+String(i.detail).replace(/[\n,;]/g,' '));
+    if(rule) L.push(rule);
+    L.push('BEGIN:VALARM','TRIGGER:-PT0M','ACTION:DISPLAY','DESCRIPTION:'+String(i.title).replace(/[\n,;]/g,' '),'END:VALARM','END:VEVENT');
+  });
+  L.push('END:VCALENDAR');
+  return L.join('\r\n');
+}
+function downloadICS(list,name){
+  if(!list.length){ toast('내보낼 일정이 없습니다.'); return; }
+  const blob=new Blob([icsBody(list)],{type:'text/calendar'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=(name||'lifeos')+'.ics'; a.click();
+  toast('내려받은 파일을 열면 아이폰 캘린더에 추가됩니다.');
+}
 function exportBackup(){
   const blob=new Blob([JSON.stringify({sessions:S.sessions,items:S.items,photos:S.photos,events:S.events,at:Date.now()},null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
@@ -1567,7 +1642,7 @@ function seed(){
     type,area,tags,title,detail,sentiment:sent,occurredAt:now-d*DAY,createdAt:now-d*DAY,
     status:type==='task'?'open':type==='reminder'?'active':'logged',scope:'personal'},ex);
   S.items.push(
-    mk(0,'record','WORK',['시험기','트러블슈팅'],'200톤 시험기 유압유 보충','정비팀 협조로 보충 후 정상 작동 확인.','plus',
+    mk(0,'record','WORK',['회사','시험기'],'200톤 시험기 유압유 보충','정비팀 협조로 보충 후 정상 작동 확인.','plus',
       {scope:'work',work:{equipment:'200톤 만능시험기',issue:'유압유 부족',action:'정비팀 요청 후 보충',result:'정상 작동 확인'}}),
     mk(0,'record','BODY',['운동'],'운동 미실시','야근으로 러닝을 건너뜀.','minus'),
     mk(0,'task','LIFE',['차량'],'자동차 정비 예약','엔진오일 교환 및 점검.','neutral',
@@ -1576,11 +1651,11 @@ function seed(){
     mk(2,'record','GROWTH',['공부'],'논문 30분 읽음','영상처리 논문 한 편.','plus'),
     mk(4,'record','LIFE',['가족'],'부모님 통화','주말에 내려가기로 함.','plus'),
     mk(6,'record','BODY',['운동','러닝'],'러닝 5km','형산강변.','plus'),
-    mk(9,'idea','LIFE',['원칙'],'속도보다 방향','일이 몰릴수록 무엇을 안 할지 먼저 정하자.','neutral'),
-    mk(12,'goal','GROWTH',['자격증'],'올해 자격증 취득','연말까지 응시.','neutral'),
+    mk(9,'record','LIFE',['생각','원칙'],'속도보다 방향','일이 몰릴수록 무엇을 안 할지 먼저 정하자.','neutral'),
+    mk(12,'task','GROWTH',['목표','자격증'],'올해 자격증 취득','연말까지 응시.','neutral',{dueAt:null,duePrecision:'none',needsConfirm:false}),
     mk(15,'record','MONEY',['고정지출'],'구독 두 개 해지','월 2만원 절감.','plus'),
-    mk(20,'task','WORK',['보고서'],'시험 결과 보고서','월간 결과 정리.','neutral',{dueAt:null,duePrecision:'none',needsConfirm:false}),
-    mk(-1,'event','WORK',['회의'],'정비팀 회의','시험기 점검 일정 협의.','neutral',
+    mk(20,'task','WORK',['회사','보고서'],'시험 결과 보고서','월간 결과 정리.','neutral',{dueAt:null,duePrecision:'none',needsConfirm:false}),
+    mk(-1,'event','WORK',['회사','회의'],'정비팀 회의','시험기 점검 일정 협의.','neutral',
       {dueAt:sod(now)+DAY+15*3600000,duePrecision:'exact',needsConfirm:false})
   );
   save.ses(); save.items(); checkDue(); render(); toast('예시 데이터를 넣었습니다.');
@@ -1618,7 +1693,6 @@ document.addEventListener('click', async e=>{
     case 'saveraw': saveRaw(); break;
     case 'commit': commit(); break;
     case 'keep': S.result.items[i]._keep=!S.result.items[i]._keep; render(); break;
-    case 'cyc-area': { const it=S.result.items[i]; it.area=AORD[(AORD.indexOf(it.area)+1)%AORD.length]; render(); break; }
     case 'cyc-type': { const it=S.result.items[i]; it.type=TORD[(TORD.indexOf(it.type)+1)%TORD.length]; render(); break; }
     case 'answer': { const it=S.result.items[i]; if(it){ const d=resolveDue(v);
       it._dueAt=d.dueAt; it._precision=d.precision; it._needsConfirm=false; }
@@ -1633,7 +1707,6 @@ document.addEventListener('click', async e=>{
     case 'edit': openEdit(id); break;
     case 'edit-close': S.edit=null; render(); break;
     case 'ed-type': S.edit.type=v; render(); break;
-    case 'ed-area': S.edit.area=v; render(); break;
     case 'ed-rep': S.edit.timeType=v; render(); break;
     case 'ed-quick': { const base=sod(Date.now()); const D=x=>new Date(x-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
       if(v==='today') S.edit.date=D(base);
@@ -1705,6 +1778,8 @@ document.addEventListener('click', async e=>{
     case 'delphotos': if(confirm('사진을 전부 지웁니다.')){ for(const p of S.photos) await delThumb(p.id);
       S.photos=[]; save.photos(); render(); toast('사진을 모두 지웠습니다.'); } break;
     case 'export': exportBackup(); break;
+    case 'ics': { const it=S.items.find(x=>x.id===id); if(it) downloadICS([it], (it.title||'알림').slice(0,12)); break; }
+    case 'icsall': downloadICS(S.items.filter(x=>(x.type==='reminder'||x.type==='event')&&x.status!=='done'),'lifeos-일정'); break;
     case 'seed': seed(); break;
     case 'reset': if(confirm('모든 기록을 지웁니다. 되돌릴 수 없습니다.')){
       S.sessions=[];S.items=[];S.events=[];S.cache={};
