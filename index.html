@@ -132,7 +132,6 @@ textarea,input[type=text],input[type=password]{width:100%;background:var(--bg);b
 .hero{padding:26px 0 6px}
 .eyebrow{font-size:14px;color:var(--ink2);font-weight:600;margin:0 0 6px}
 h1.big{margin:0 0 20px;font-size:32px;font-weight:800;letter-spacing:-.035em;line-height:1.28}
-.bigmic{font-size:19px;padding:20px;display:flex;align-items:center;justify-content:center;gap:10px}
 .sigrow{display:flex;gap:6px}
 .sigcell{flex:1;background:var(--panel);border-radius:12px;padding:11px 4px;text-align:center}
 .sigcell span{display:block;font-size:21px;font-weight:800}
@@ -223,7 +222,7 @@ function write(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true;}
   catch(e){toast('저장 공간이 가득 찼습니다. 설정에서 사진을 정리해 주세요.');return false;}}
 
 const DEFCFG={provider:'gemini',keys:{gemini:'',openai:'',claude:''},
-  models:{gemini:'',openai:'',claude:''},sendWork:true,notify:false};
+  models:{gemini:'',openai:'',claude:''},sendWork:true,notify:false,calWay:'pick',scName:'Life OS 일정'};
 const cfg0=Object.assign({},DEFCFG,read(K.cfg,{}));
 cfg0.keys=Object.assign({},DEFCFG.keys,cfg0.keys||{});
 cfg0.models=Object.assign({},DEFCFG.models,cfg0.models||{});
@@ -235,7 +234,7 @@ const S={ tab:'home', sessions:read(K.ses,[]), items:read(K.items,[]), photos:re
   edit:null, ask:'', askAns:'', sim:null, goalPlan:null, ent:null,
   micKey:null, quickText:'', calMonth:null, calDay:null,
   chat:read('lifeos.v5.chat',[]), libTab:'timeline', selMode:false, sel:[], doneOpen:false,
-  icsUrl:null, icsList:null, calPrompt:null };
+  icsUrl:null, icsList:null, calPrompt:null, topic:'health', calPick:null, pickUrl:null };
 const save={ ses:()=>write(K.ses,S.sessions), items:()=>write(K.items,S.items),
   photos:()=>write(K.photos,S.photos), ev:()=>write(K.ev,S.events.slice(-400)),
   cache:()=>write(K.cache,S.cache), cfg:()=>write(K.cfg,S.cfg) };
@@ -882,7 +881,7 @@ function intervention(){
 }
 
 /* ================= 화면 ================= */
-function view(){ return ({home,calendar,plan,assist,library,review,settings}[S.tab]||home)(); }
+function view(){ return ({home,calendar,plan,assist,library,review,settings,topic}[S.tab]||home)(); }
 
 function home(){
   const d=new Date(), iv=intervention(), tp=todayPlan();
@@ -910,13 +909,11 @@ function home(){
     ${i.type==='event'?`<button class="calbtn tap" data-act="sendcal" data-id="${i.id}" aria-label="폰 캘린더">
       <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></button>`:''}</div></div>`;
   const sec=(title,list)=>list.length?`<div class="sec"><h3>${title}</h3>${list.map(rowLine).join('')}</div>`:'';
-  const tile=(act,v,icon,title,sub)=>`<button class="tile tap" data-act="${act}"${v?` data-v="${v}"`:''}>
-    <span class="ti">${icon}</span><span class="tt">${title}</span><span class="ts">${sub}</span></button>`;
 
   if(!S.items.length) return `<div style="padding-top:30px">
     <h1 class="big">말하면<br>정리됩니다.</h1>
     <p class="sub" style="margin:16px 0 26px">기록도, 일정도, 할 일도 전부 말로 넣으면 AI가 알아서 나눕니다.</p>
-    <button class="btn primary tap" data-act="capture" style="font-size:19px;padding:22px">🎙️ 지금 말하기</button>
+    <button class="btn primary tap" data-act="capture" style="font-size:19px;padding:22px">🎙️ 첫 기록 남기기</button>
     <div style="height:10px"></div>
     <button class="btn ghost tap" data-act="import">사진으로 과거 채우기</button>
     <div style="height:10px"></div>
@@ -930,14 +927,16 @@ function home(){
   <div class="hero">
     <p class="eyebrow">${fmd(Date.now())} ${WD[d.getDay()]}요일</p>
     <h1 class="big">${line}</h1>
-    <button class="btn dark tap bigmic" data-act="capture">🎙️ 지금 말하기</button>
   </div>
 
   <div class="tiles">
-    ${tile('tab','calendar','📅','캘린더',todayList.filter(i=>i.type==='event').length?('오늘 일정 '+todayList.filter(i=>i.type==='event').length):'일정 관리')}
-    ${tile('tab','plan','✅','할 일',openTasks+'건 남음')}
-    ${tile('tab','assist','💬','비서','물어보기')}
-    ${tile('tab','library','🗂️','기록',S.items.length+'건 쌓임')}
+    ${TORDER.map(k=>{
+      const n=S.items.filter(i=>topicOf(i)===k&&(i.occurredAt||i.createdAt)>Date.now()-30*DAY).length;
+      const last=S.items.filter(i=>topicOf(i)===k).sort((a,b)=>(b.occurredAt||b.createdAt)-(a.occurredAt||a.createdAt))[0];
+      return `<button class="tile tap" data-act="topic" data-v="${k}">
+        <span class="ti">${TOPICS[k].icon}</span><span class="tt">${TOPICS[k].name}</span>
+        <span class="ts">${n?('30일 '+n+'건'):'기록 없음'}${last?' · '+rel(last.occurredAt||last.createdAt):''}</span></button>`;
+    }).join('')}
   </div>
 
   ${pendingExports().length?`<div class="sec">
@@ -1222,6 +1221,48 @@ function assist(){
   </div>`;
 }
 
+function topic(){
+  const k=S.topic||'health', T=TOPICS[k];
+  const list=S.items.filter(i=>topicOf(i)===k)
+    .sort((a,b)=>(b.occurredAt||b.createdAt)-(a.occurredAt||a.createdAt));
+  const days={};
+  list.forEach(i=>{ const d=sod(i.occurredAt||i.createdAt); (days[d]=days[d]||[]).push(i); });
+  const keys=Object.keys(days).map(Number).sort((a,b)=>b-a).slice(0,30);
+  const n30=list.filter(i=>(i.occurredAt||i.createdAt)>Date.now()-30*DAY).length;
+  const n30p=list.filter(i=>{const t=i.occurredAt||i.createdAt;
+    return t>Date.now()-60*DAY&&t<=Date.now()-30*DAY;}).length;
+  const tags={}; list.slice(0,80).forEach(i=>(i.tags||[]).forEach(g=>tags[g]=(tags[g]||0)+1));
+  const top=Object.entries(tags).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const acts=id=>`<div class="acts">
+    <button class="a-edit" data-act="edit" data-id="${id}">수정</button>
+    <button class="a-sel" data-act="selstart" data-id="${id}">선택</button>
+    <button class="a-del" data-act="sheetdel" data-id="${id}">지우기</button></div>`;
+  return `<div style="padding-top:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="font-size:22px">${T.icon} ${T.name}</h2>
+      <button class="pill sm tap" data-act="tab" data-v="home">홈</button></div>
+    <p class="small" style="margin-bottom:16px">최근 30일 ${n30}건${n30p?` · 그 전 30일 ${n30p}건`:''}
+      ${n30p?(n30>n30p?' · 늘었습니다':n30<n30p?' · 줄었습니다':' · 비슷합니다'):''}</p>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+      ${TORDER.map(x=>`<button class="pill sm tap ${x===k?'on':''}" data-act="topic" data-v="${x}">${TOPICS[x].icon} ${TOPICS[x].name}</button>`).join('')}
+    </div>
+
+    ${top.length?`<div style="margin-bottom:18px">
+      ${top.map(([g,c])=>`<span class="tagchip">#${esc(g)} ${c}</span>`).join('')}</div>`:''}
+
+    ${keys.length? keys.map(d=>`
+      <div class="datehead"><b>${fmd(d)} (${WD[new Date(d).getDay()]})</b><span class="small">${rel(d)}</span></div>
+      ${days[d].map(i=>`<div class="swipe">${acts(i.id)}
+        <div class="front row" data-act="edit" data-id="${i.id}">
+          <span class="dot" style="background:${i.sentiment==='minus'?'var(--red)':i.sentiment==='plus'?'var(--green)':'var(--ink3)'}"></span>
+          <div style="flex:1"><div style="font-weight:600">${priBadge(i)}${esc(i.title)}</div>
+            <div class="small">${TYPE[i.type]}${(i.tags||[]).slice(0,2).map(x=>' · #'+esc(x)).join('')}</div></div>
+        </div></div>`).join('')}`).join('')
+      : `<p class="sub">아직 ${T.name} 기록이 없습니다. 가운데 🎙️로 말해 보세요.</p>`}
+  </div>`;
+}
+
 function library(){
   const seg=S.libTab||'timeline';
   const head=`<div style="padding-top:16px">
@@ -1334,12 +1375,32 @@ function settings(){
         ${hasKey()?'연결됨 · '+esc(curModel()):'아직 연결 안 됨 — 규칙 분류로만 동작'}</p>
     </div>
 
-    <div class="card" style="margin-bottom:14px"><h3>폰 캘린더 · 알림</h3>
-      <p class="sub" style="margin-bottom:10px">앱이 꺼져 있을 때 울리게 하려면 일정을 아이폰 캘린더에 넣어야 합니다.
-        일정 옆 📅를 누르면 공유 창이 열리고, 거기서 <b>캘린더</b>를 고르면 등록됩니다.</p>
-      <p class="small" style="margin-bottom:12px">${(navigator.canShare&&navigator.canShare({files:[new File([''],'a.ics',{type:'text/calendar'})]}))?'이 기기: 공유 창 사용 가능':'이 기기: 공유 창 미지원 — 파일 받기로 넣으세요'}</p>
+    <div class="card" style="margin-bottom:14px"><h3>폰 캘린더 넣는 방식</h3>
+      <p class="sub" style="margin-bottom:12px">📅 버튼을 눌렀을 때 무엇을 할지 고르세요.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        ${[['pick','고르고 등록 (기본)'],['share','공유 창'],['menu','방법 목록'],['shortcut','단축어 바로']].map(([v,l])=>
+          `<button class="pill sm tap ${(S.cfg.calWay||'pick')===v?'on':''}" data-act="calway" data-v="${v}">${l}</button>`).join('')}
+      </div>
       <button class="btn primary tap" data-act="sendcal">앞으로의 일정 전부 넣기</button>
-      <div class="row" style="margin-top:10px"><div style="flex:1"><div style="font-weight:600">앱 안 알림</div>
+
+      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:14px">
+        <div style="font-weight:700;margin-bottom:8px">단축어 만드는 법 (한 번만)</div>
+        <p class="sub" style="font-size:14.5px;line-height:1.9">
+          1. 아이폰 <b>단축어</b> 앱 → ＋ → 새로운 단축어<br>
+          2. 위 이름을 <b>Life OS 일정</b>으로 바꾸기<br>
+          3. 동작 추가 → <b>텍스트 분할</b> (구분자: 사용자 지정 <b>||</b>, 입력: 단축어 입력)<br>
+          4. 동작 추가 → <b>목록에서 항목 가져오기</b> → 첫 번째 항목 (제목)<br>
+          5. 동작 추가 → <b>목록에서 항목 가져오기</b> → 마지막 항목 (날짜)<br>
+          6. 동작 추가 → <b>새로운 캘린더 이벤트 추가</b> → 제목·시작일에 위 두 값 넣기<br>
+          7. 저장하면 끝. 이제 위에서 ‘단축어 바로’를 고르세요.
+        </p>
+        <p class="small" style="margin-top:10px">단축어 이름을 다르게 지었다면 아래에 그 이름을 적으세요.</p>
+        <input type="text" id="scname" value="${esc(S.cfg.scName||'Life OS 일정')}" style="margin-top:8px">
+        <div style="height:8px"></div>
+        <button class="btn ghost tap" data-act="savescname">이름 저장</button>
+      </div>
+
+      <div class="row" style="margin-top:14px"><div style="flex:1"><div style="font-weight:600">앱 안 알림</div>
         <div class="small">앱이 열려 있을 때만</div></div>
         <button class="pill sm tap ${S.cfg.notify?'on':''}" data-act="toggleNotify">${S.cfg.notify?'켜짐':'꺼짐'}</button></div>
     </div>
@@ -1500,7 +1561,9 @@ function render(){
       <button class="pill sm tap" data-act="selmode">취소</button>
       <button class="pill sm tap" data-act="seldel" style="background:var(--red);border-color:var(--red);color:#fff">지우기</button>`;
     document.body.appendChild(b); }
-  if(S.calPrompt&&!S.icsUrl){ const d=document.createElement('div'); d.innerHTML=calPromptModal();
+  if(S.calPick){ const d=document.createElement('div'); d.innerHTML=calPickModal();
+    if(d.firstElementChild) document.body.appendChild(d.firstElementChild); }
+  if(S.calPrompt&&!S.icsUrl&&!S.calPick){ const d=document.createElement('div'); d.innerHTML=calPromptModal();
     if(d.firstElementChild) document.body.appendChild(d.firstElementChild); }
   if(S.icsUrl){ const d=document.createElement('div'); d.innerHTML=calHelpModal();
     document.body.appendChild(d.firstElementChild); }
@@ -1744,6 +1807,9 @@ function icsList(id){
 function sendToCal(id){
   const list=icsList(id);
   if(!list.length){ toast('보낼 일정이 없습니다.'); return; }
+  if(S.cfg.calWay==='shortcut'){ markExported(list); location.href=scUrl(list); return; }
+  if(S.cfg.calWay==='menu'){ openCalHelp(list); return; }
+  if((S.cfg.calWay||'pick')==='pick'){ openCalPick(list); return; }
   const text=icsBody(list);
   try{
     const file=new File([text],'lifeos.ics',{type:'text/calendar'});
@@ -1777,35 +1843,88 @@ function calPromptModal(){
     <button class="btn ghost tap" data-act="calpromptno">나중에</button>
   </div>`;
 }
+function openCalPick(list){
+  if(S.pickUrl){ try{URL.revokeObjectURL(S.pickUrl);}catch(e){} S.pickUrl=null; }
+  S.calPick={ ids:list.map(i=>i.id), sel:list.map(i=>i.id) };
+  render();
+}
+function calPickModal(){
+  if(!S.calPick) return '';
+  const all=S.calPick.ids.map(id=>S.items.find(x=>x.id===id)).filter(Boolean);
+  const picked=all.filter(i=>S.calPick.sel.includes(i.id));
+  if(S.pickUrl){ try{URL.revokeObjectURL(S.pickUrl);}catch(e){} }
+  S.pickUrl = picked.length ? URL.createObjectURL(new Blob([icsBody(picked)],{type:'text/calendar'})) : '';
+  return `<div class="modal fade">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="font-size:21px">캘린더에 등록</h2>
+      <button class="pill sm tap" data-act="calpickclose">닫기</button></div>
+    <p class="sub" style="margin-bottom:16px">등록할 것을 고르세요. 다음 화면에서 <b>어느 캘린더에 넣을지</b>와
+      <b>알림 시각</b>을 정하게 됩니다.</p>
+
+    ${all.map(i=>{
+      const on=S.calPick.sel.includes(i.id);
+      return `<div class="row" data-act="calpick" data-id="${i.id}" style="align-items:center">
+        <span class="cb ${on?'on':''}" style="pointer-events:none"></span>
+        <div style="flex:1"><div style="font-weight:600">${esc(i.title)}</div>
+          <div class="small">${i.dueAt?fmd(i.dueAt)+' '+(allDay(i)?'하루 종일':ftime(i.dueAt)):'시각 미정'}${i.repeat==='daily'?' · 매일':''}</div></div>
+      </div>`;}).join('')}
+
+    <div style="height:20px"></div>
+    ${picked.length?`<a class="btn primary" data-act="calpickgo" href="${S.pickUrl}" download="lifeos.ics"
+        style="display:block;text-align:center;text-decoration:none">${picked.length}건 캘린더에 등록</a>`
+      :`<button class="btn" disabled>등록할 것을 고르세요</button>`}
+    <div style="height:10px"></div>
+    <button class="btn ghost tap" data-act="calpickmore">다른 방법으로 넣기</button>
+    <p class="small" style="margin-top:12px">등록 화면이 안 뜨면 ‘파일에 저장’ 후 파일 앱에서 그 파일을 누르세요.</p>
+  </div>`;
+}
 function calHelpModal(){
   if(!S.icsUrl) return '';
-  const one=S.icsList&&S.icsList.length===1?S.icsList[0]:null;
+  const list=S.icsList||[];
+  const one=list.length===1?list[0]:null;
   return `<div class="modal fade">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <h2 style="font-size:21px">폰 캘린더에 넣기</h2>
       <button class="pill sm tap" data-act="calhelpclose">닫기</button></div>
-    <p class="sub" style="margin-bottom:18px">이 기기에서는 공유 창이 열리지 않습니다. 아래 방법 중 하나로 넣으세요.</p>
 
     <div class="card" style="margin-bottom:12px">
-      <h3>1. 파일로 받아서 열기</h3>
-      <p class="sub" style="margin-bottom:12px">파일이 받아지면 <b>파일 앱 › 다운로드</b>에서 그 파일을 누르세요.
-        캘린더 추가 화면이 뜹니다.</p>
+      <h3>방법 1 · 파일 앱 거치기 (확실함)</h3>
+      <p class="sub" style="margin-bottom:12px">아래 버튼 → <b>파일에 저장</b> → 파일 앱에서 그 파일을 누르면
+        캘린더 추가 화면이 뜹니다. 공유 창에 캘린더가 없어도 이 방법은 됩니다.</p>
       <a class="btn primary" href="${S.icsUrl}" download="lifeos.ics"
          style="display:block;text-align:center;text-decoration:none">일정 파일 받기</a></div>
 
+    <div class="card" style="margin-bottom:12px">
+      <h3>방법 2 · 단축어로 한 번에 (설정 후 제일 편함)</h3>
+      <p class="sub" style="margin-bottom:12px">단축어를 한 번 만들어두면 그다음부터는 버튼 하나로 폰 캘린더에 바로 들어갑니다.
+        만드는 법은 설정 화면에 적어뒀습니다.</p>
+      <a class="btn ghost" href="${scUrl(list)}"
+         style="display:block;text-align:center;text-decoration:none">단축어로 보내기</a></div>
+
     ${one?`<div class="card" style="margin-bottom:12px">
-      <h3>2. 구글 캘린더로 열기</h3>
-      <p class="sub" style="margin-bottom:12px">구글 계정이 아이폰 캘린더에 연결돼 있으면 여기서 저장해도 폰에 뜹니다.</p>
+      <h3>방법 3 · 구글 캘린더</h3>
+      <p class="sub" style="margin-bottom:12px">구글 계정이 아이폰 캘린더에 연결돼 있을 때만 폰에도 뜹니다.</p>
       <a class="btn ghost" href="${gcalUrl(one)}" target="_blank" rel="noopener"
          style="display:block;text-align:center;text-decoration:none">구글 캘린더로 열기</a></div>`:''}
 
     <div class="card">
-      <h3>3. 직접 넣기</h3>
-      <p class="sub">아이폰 캘린더 앱을 열고 아래 내용을 그대로 넣으세요.</p>
+      <h3>방법 4 · 직접 넣기</h3>
       <div class="fill" style="border-radius:10px;padding:14px;margin-top:10px;font-size:15px;line-height:1.9">
-        ${(S.icsList||[]).slice(0,5).map(i=>`· ${esc(i.title)} — ${i.dueAt?fmd(i.dueAt)+' '+(allDay(i)?'하루 종일':ftime(i.dueAt)):'시각 미정'}${i.repeat==='daily'?' (매일)':''}`).join('<br>')}
+        ${list.slice(0,6).map(i=>`· ${esc(i.title)} — ${i.dueAt?fmd(i.dueAt)+' '+(allDay(i)?'하루 종일':ftime(i.dueAt)):'시각 미정'}`).join('<br>')}
       </div></div>
   </div>`;
+}
+
+function scText(i){
+  const st=i.dueAt||i.occurredAt||Date.now(), d=new Date(st), day=allDay(i);
+  const when=d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+
+    (day?'09:00':p2(d.getHours())+':'+p2(d.getMinutes()));
+  return (i.title||'일정')+'||'+when;
+}
+function scUrl(list){
+  const name=((S.cfg&&S.cfg.scName)||'Life OS 일정').trim();
+  return 'shortcuts://x-callback-url/run-shortcut?name='+encodeURIComponent(name)+
+    '&input=text&text='+encodeURIComponent(list.map(scText).join('\n'));
 }
 function gcalUrl(i){
   const st=i.dueAt||i.occurredAt||Date.now();
@@ -1897,6 +2016,7 @@ document.addEventListener('click', async e=>{
     case 'dictate': micToggle(v); break;
     case 'askjump': S.tab='assist'; render(); break;
     case 'libtab': S.libTab=v; S.ent=null; render(); break;
+    case 'topic': S.topic=v; S.tab='topic'; render(); break;
     case 'chip': { const label={plan:'오늘 뭐부터 할까?',status:'요즘 나 어때?',week:'이번 주 뭐 했지?'}[v];
       pushChat('me',label); pushChat('ai',localAnswer(v)); render(); break; }
     case 'chatclear': if(confirm('대화 내역을 전부 지웁니다.')){ S.chat=[]; write('lifeos.v5.chat',[]); render(); } break;
@@ -1937,7 +2057,19 @@ document.addEventListener('click', async e=>{
     case 'selmode': S.selMode=!S.selMode; S.sel=[]; render(); break;
     case 'selstart': S.selMode=true; S.sel=[id]; render(); break;
     case 'sendcal': sendToCal(id||'all'); break;
-    case 'calpromptgo': { const ids=S.calPrompt; S.calPrompt=null; sendToCal(ids); render(); break; }
+    case 'calway': S.cfg.calWay=v; save.cfg(); render(); toast('방식을 바꿨습니다.'); break;
+    case 'calpick': { const k=S.calPick.sel.indexOf(id);
+      if(k>=0) S.calPick.sel.splice(k,1); else S.calPick.sel.push(id);
+      render(); break; }
+    case 'calpickclose': S.calPick=null; render(); break;
+    case 'calpickgo': { const picked=S.calPick.sel.map(x=>S.items.find(y=>y.id===x)).filter(Boolean);
+      markExported(picked); setTimeout(()=>{ S.calPick=null; render();
+        toast('캘린더 화면에서 캘린더와 알림을 고르고 추가를 누르세요.'); }, 900); break; }
+    case 'calpickmore': { const picked=S.calPick.sel.map(x=>S.items.find(y=>y.id===x)).filter(Boolean);
+      S.calPick=null; openCalHelp(picked.length?picked:icsList('all')); break; }
+    case 'savescname': { const el=document.getElementById('scname');
+      S.cfg.scName=(el&&el.value.trim())||'Life OS 일정'; save.cfg(); render(); toast('저장했습니다.'); break; }
+    case 'calpromptgo': { const ids=S.calPrompt; S.calPrompt=null; sendToCal(ids); break; }
     case 'calpromptno': S.calPrompt=null; render(); break;
     case 'calhelpclose': { if(S.icsUrl){ try{URL.revokeObjectURL(S.icsUrl);}catch(e){} }
       S.icsUrl=null; S.icsList=null; render(); break; }
