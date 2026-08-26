@@ -87,6 +87,11 @@ textarea,input[type=text],input[type=password]{width:100%;background:var(--bg);b
 .viewer img{max-width:100%;max-height:60vh;border-radius:12px}
 .warn{border-left:4px solid var(--red);background:#FDF4F2;border-radius:10px;padding:14px 16px}
 .info{border-left:4px solid var(--blue);background:#F1F5FE;border-radius:10px;padding:14px 16px}
+.selbar{position:fixed;left:0;right:0;bottom:calc(74px + env(safe-area-inset-bottom));z-index:45;
+  background:var(--ink);color:#fff;display:flex;align-items:center;gap:8px;padding:12px 16px}
+.selbar span{flex:1;font-size:15px;font-weight:600}
+.selbar .pill{background:transparent;border-color:rgba(255,255,255,.4);color:#fff}
+.trow.picked,.row.picked{background:#F1F5FE}
 .udot{display:inline-block;width:9px;height:9px;border-radius:5px;background:var(--red);
   margin-right:7px;vertical-align:middle}
 .star{color:#E8A317;font-size:16px;margin-right:5px}
@@ -116,6 +121,9 @@ h1.big{margin:0 0 20px;font-size:32px;font-weight:800;letter-spacing:-.035em;lin
 .sigcell span{display:block;font-size:21px;font-weight:800}
 .sigcell b{display:block;font-size:12.5px;font-weight:600;color:var(--ink2);margin-top:3px}
 .chat{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+.bubwrap{display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.bubtools{display:flex;gap:12px;padding-left:4px}
+.bubtools button{background:none;border:none;color:var(--ink3);font-size:12.5px;padding:0}
 .bub{max-width:88%;padding:14px 16px;border-radius:16px;font-size:16px;line-height:1.75;white-space:pre-wrap}
 .bub.ai{background:var(--panel);align-self:flex-start;border-bottom-left-radius:5px}
 .bub.me{background:var(--blue);color:#fff;align-self:flex-end;border-bottom-right-radius:5px}
@@ -209,7 +217,7 @@ const S={ tab:'home', sessions:read(K.ses,[]), items:read(K.items,[]), photos:re
   tlFilter:'all', viewer:null, open:null, modelList:null, due:[],
   edit:null, ask:'', askAns:'', sim:null, goalPlan:null, ent:null,
   micKey:null, quickText:'', calMonth:null, calDay:null,
-  chat:read('lifeos.v5.chat',[]), libTab:'timeline' };
+  chat:read('lifeos.v5.chat',[]), libTab:'timeline', selMode:false, sel:[] };
 const save={ ses:()=>write(K.ses,S.sessions), items:()=>write(K.items,S.items),
   photos:()=>write(K.photos,S.photos), ev:()=>write(K.ev,S.events.slice(-400)),
   cache:()=>write(K.cache,S.cache), cfg:()=>write(K.cfg,S.cfg) };
@@ -1027,7 +1035,9 @@ function calendar(){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <button class="pill sm tap" data-act="calmove" data-v="-1">‹</button>
       <h2 style="font-size:21px">${y}년 ${m+1}월</h2>
-      <button class="pill sm tap" data-act="calmove" data-v="1">›</button></div>
+      <div style="display:flex;gap:6px">
+        <button class="pill sm tap ${S.selMode?'on':''}" data-act="selmode">${S.selMode?'선택 끝':'선택'}</button>
+        <button class="pill sm tap" data-act="calmove" data-v="1">›</button></div></div>
     <div class="cgrid head">${['일','월','화','수','목','금','토'].map(w=>`<div>${w}</div>`).join('')}</div>
     <div class="cgrid">${cells.join('')}</div>
 
@@ -1038,11 +1048,11 @@ function calendar(){
     <h3>${fdate(sel)} (${WD[new Date(sel).getDay()]})</h3>
     ${list.length? list.map(i=>{
       const t=i.dueAt||i.occurredAt||i.createdAt;
-      return `<div class="row" data-act="edit" data-id="${i.id}">
-        <span class="dot" style="background:${i.type==='event'?'var(--blue)':i.type==='task'?'var(--amber)':i.type==='reminder'?'var(--green)':'var(--ink3)'}"></span>
+      return `<div class="row ${S.sel.includes(i.id)?'picked':''}" data-act="${S.selMode?'pick':'edit'}" data-id="${i.id}">
+        <span class="dot" style="background:${S.sel.includes(i.id)?'var(--red)':i.type==='event'?'var(--blue)':i.type==='task'?'var(--amber)':i.type==='reminder'?'var(--green)':'var(--ink3)'}"></span>
         <div style="flex:1"><div style="font-weight:600">${esc(i.title)}</div>
           <div class="small">${ftime(t)} · ${TYPE[i.type]}${(i.tags||[]).slice(0,2).map(x=>' · #'+esc(x)).join('')}${i.status==='done'?' · 완료':''}</div></div>
-        <button class="tap" data-act="edit" data-id="${i.id}" style="background:none;border:none;color:var(--ink3);font-size:15px;padding:4px 6px">고치기</button>
+        ${S.selMode?'':`<button class="tap" data-act="edit" data-id="${i.id}" style="background:none;border:none;color:var(--ink3);font-size:15px;padding:4px 6px">고치기</button>`}
       </div>`;}).join('')
       : '<p class="sub">이날은 비어 있습니다. 위 버튼으로 말해서 넣어 보세요.</p>'}
     <div style="height:14px"></div>
@@ -1072,15 +1082,16 @@ function plan(){
   });
   const bydate=(a,b)=>((b.star?1:0)-(a.star?1:0))||((a.dueAt||0)-(b.dueAt||0));
   ['over','today','tomorrow','week','later'].forEach(k=>g[k].sort(bydate));
-  const row=t=>`<div class="trow">
-    <button class="cb tap ${t.status==='done'?'on':''}" data-act="toggle" data-id="${t.id}" aria-label="완료"></button>
-    <div style="flex:1;min-width:0" data-act="edit" data-id="${t.id}">
+  const row=t=>`<div class="trow ${S.sel.includes(t.id)?'picked':''}" ${S.selMode?`data-act="pick" data-id="${t.id}"`:''}>
+    <button class="cb tap ${S.selMode?(S.sel.includes(t.id)?'on':''):(t.status==='done'?'on':'')}"
+      data-act="${S.selMode?'pick':'toggle'}" data-id="${t.id}" aria-label="${S.selMode?'선택':'완료'}"></button>
+    <div style="flex:1;min-width:0" data-act="${S.selMode?'pick':'edit'}" data-id="${t.id}">
       <div class="tt2 ${t.status==='done'?'off':''}">${markDot(t)}${starMark(t)}${esc(t.title)}</div>
       <div class="tmeta">${t.dueAt?fmd(t.dueAt)+' ('+WD[new Date(t.dueAt).getDay()]+') '+ftime(t.dueAt):'기한 없음'}
         ${(t.tags||[]).slice(0,2).map(x=>'· #'+esc(x)).join(' ')}</div></div>
-    <button class="starbtn tap ${t.star?'on':''}" data-act="star" data-id="${t.id}" aria-label="중요 표시">${t.star?'★':'☆'}</button>
+    ${S.selMode?'':`<button class="starbtn tap ${t.star?'on':''}" data-act="star" data-id="${t.id}" aria-label="중요 표시">${t.star?'★':'☆'}</button>
     <button class="tap" data-act="edit" data-id="${t.id}" style="background:none;border:none;color:var(--ink3);padding:6px">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L20 8l-4-4L4 16z"/></svg></button></div>`;
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L20 8l-4-4L4 16z"/></svg></button>`}</div>`;
   const block=(title,color,items,extra)=>items.length?`<div class="pblock">
     <div class="phead" style="border-color:${color}"><b>${title}</b><span>${items.length}</span></div>
     ${items.map(row).join('')}${extra||''}</div>`:'';
@@ -1088,7 +1099,9 @@ function plan(){
   return `<div style="padding-top:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <h2 style="font-size:22px">할 일</h2>
-      <button class="pill sm tap" data-act="tab" data-v="calendar">캘린더</button></div>
+      <div style="display:flex;gap:8px">
+        <button class="pill sm tap ${S.selMode?'on':''}" data-act="selmode">${S.selMode?'선택 끝':'선택'}</button>
+        <button class="pill sm tap" data-act="tab" data-v="calendar">캘린더</button></div></div>
 
     <div style="display:flex;gap:8px;margin-bottom:18px">
       <input type="text" id="quick" placeholder="한 줄 적기 (내일 3시처럼 시간도 됩니다)" style="flex:1" value="${esc(S.quickText||'')}">
@@ -1107,7 +1120,6 @@ function plan(){
     ${open.filter(t=>t.star&&!t.needsConfirm).length?`<div class="pblock">
       <div class="phead" style="border-color:#E8A317"><b>★ 중요</b><span>${open.filter(t=>t.star&&!t.needsConfirm).length}</span></div>
       ${open.filter(t=>t.star&&!t.needsConfirm).sort(bydate).map(row).join('')}</div>`:''}
-    ${block('지났음 · 놓친 것','var(--red)',g.over)}
     ${block('오늘','var(--ink)',g.today)}
     ${block('내일','var(--blue)',g.tomorrow)}
     ${block('이번 주 안','var(--blue)',g.week)}
@@ -1130,6 +1142,8 @@ function plan(){
       ${pendingExports().length?`<button class="btn primary tap" style="margin-top:10px" data-act="icsall">
         폰 알림으로 한 번에 등록 (${pendingExports().length}건)</button>`:''}</div>`:''}
 
+    ${block('지났음 · 놓친 것','var(--red)',g.over)}
+
     ${done.length?`<div class="pblock">
       <div class="phead" style="border-color:var(--green)"><b>끝냄</b><span>${done.length}</span></div>
       ${done.map(row).join('')}</div>`:''}
@@ -1146,10 +1160,15 @@ function assist(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
       ${chips.map(([t,k])=>`<button class="pill sm tap" data-act="chip" data-v="${k}">${t}</button>`).join('')}
     </div>
-    ${S.chat.length?`<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-      <button class="tap" data-act="chatclear" style="background:none;border:none;color:var(--ink3);font-size:13.5px">대화 내역 지우기</button></div>`:''}
     <div class="chat">
-      ${S.chat.length? S.chat.map(m=>`<div class="bub ${m.role}">${esc(m.text)}</div>`).join('')
+      ${S.chat.length? S.chat.map((m,mi)=>m.role==='ai'
+        ? `<div class="bubwrap">
+             <div class="bub ai">${esc(m.text)}</div>
+             <div class="bubtools">
+               <button class="tap" data-act="delmsg" data-i="${mi}">이 답변 지우기</button>
+               <button class="tap" data-act="chatclear">대화 전체 지우기</button>
+             </div></div>`
+        : `<div class="bub me">${esc(m.text)}</div>`).join('')
         :`<div class="bub ai">무엇이든 물어보세요. "이번 주말에 쉬어도 될까?" 처럼 판단이 필요한 것도 좋습니다.</div>`}
       ${S.busy?'<div class="bub ai">생각 중…</div>':''}
     </div>
@@ -1441,6 +1460,13 @@ function render(){
   document.querySelectorAll('.modal').forEach(x=>x.remove());
   if(S.capture){ const d=document.createElement('div'); d.innerHTML=captureModal();
     document.body.appendChild(d.firstElementChild); }
+  document.querySelectorAll('.selbar').forEach(x=>x.remove());
+  if(S.selMode){ const b=document.createElement('div'); b.className='selbar';
+    b.innerHTML=`<span>${S.sel.length}건 선택</span>
+      <button class="pill sm tap" data-act="selall">전체</button>
+      <button class="pill sm tap" data-act="selmode">취소</button>
+      <button class="pill sm tap" data-act="seldel" style="background:var(--red);border-color:var(--red);color:#fff">지우기</button>`;
+    document.body.appendChild(b); }
   if(S.edit){ const d=document.createElement('div'); d.innerHTML=editModal();
     document.body.appendChild(d.firstElementChild);
     ['title','detail','tags','date','time','when'].forEach(f=>{
@@ -1638,7 +1664,7 @@ ${compactItems()}`));
 /* 아이폰 캘린더로 내보내 앱이 꺼져 있어도 알림이 오게 한다 */
 function icsTime(t){ return new Date(t).toISOString().replace(/[-:]/g,'').split('.')[0]+'Z'; }
 function icsBody(list){
-  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Life OS//KO','CALSCALE:GREGORIAN'];
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Life OS//KO','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
   list.forEach(i=>{
     let start=null, rule=null;
     if(i.type==='reminder'){
@@ -1654,7 +1680,8 @@ function icsBody(list){
       'SUMMARY:'+String(i.title).replace(/[\n,;]/g,' '));
     if(i.detail) L.push('DESCRIPTION:'+String(i.detail).replace(/[\n,;]/g,' '));
     if(rule) L.push(rule);
-    L.push('BEGIN:VALARM','TRIGGER:-PT0M','ACTION:DISPLAY','DESCRIPTION:'+String(i.title).replace(/[\n,;]/g,' '),'END:VALARM','END:VEVENT');
+    L.push('BEGIN:VALARM','TRIGGER;RELATED=START:-PT1M','ACTION:DISPLAY',
+      'DESCRIPTION:'+String(i.title).replace(/[\n,;]/g,' '),'END:VALARM','END:VEVENT');
   });
   L.push('END:VCALENDAR');
   return L.join('\r\n');
@@ -1666,15 +1693,34 @@ function needsExport(i){
   return i.exported!==stamp;
 }
 function pendingExports(){ return S.items.filter(needsExport); }
-function downloadICS(list,name){
+async function downloadICS(list,name){
   if(!list.length){ toast('폰에 넘길 새 알림이 없습니다.'); return; }
-  const blob=new Blob([icsBody(list)],{type:'text/calendar'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=(name||'lifeos-알림')+'.ics'; a.click();
-  list.forEach(i=>{ i.exported=(i.dueAt||0)+'/'+(i.time||'')+'/'+i.title; });
-  save.items();
-  toast(list.length+'건을 담았습니다. 받은 파일을 열고 ‘전체 추가’만 누르면 끝입니다.');
-  setTimeout(render,600);
+  const text=icsBody(list);
+  const fname=(name||'lifeos')+'.ics';
+  const mark=()=>{ list.forEach(i=>{ i.exported=(i.dueAt||0)+'/'+(i.time||'')+'/'+i.title; });
+    save.items(); setTimeout(render,600); };
+
+  // 1순위: 공유 시트 (아이폰에서 '캘린더에 추가'가 바로 뜬다)
+  try{
+    const file=new File([text],fname,{type:'text/calendar'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:'Life OS 알림'});
+      mark(); toast('캘린더에 추가하면 잠금화면에서 울립니다.'); return;
+    }
+  }catch(e){ if(e && e.name==='AbortError') return; }
+
+  // 2순위: 새 창으로 열기 (사파리가 캘린더로 넘긴다)
+  try{
+    const url=URL.createObjectURL(new Blob([text],{type:'text/calendar'}));
+    const w=window.open(url,'_blank');
+    if(w){ mark(); toast('열린 화면에서 ‘추가’를 누르면 됩니다.'); return; }
+  }catch(e){}
+
+  // 3순위: 파일 저장
+  const a=document.createElement('a');
+  a.href='data:text/calendar;charset=utf-8,'+encodeURIComponent(text);
+  a.download=fname; document.body.appendChild(a); a.click(); a.remove();
+  mark(); toast('받은 파일을 열고 ‘전체 추가’를 누르세요.');
 }
 function exportBackup(){
   const blob=new Blob([JSON.stringify({sessions:S.sessions,items:S.items,photos:S.photos,events:S.events,at:Date.now()},null,2)],{type:'application/json'});
@@ -1723,7 +1769,10 @@ document.addEventListener('click', async e=>{
     case 'libtab': S.libTab=v; S.ent=null; render(); break;
     case 'chip': { const label={plan:'오늘 뭐부터 할까?',status:'요즘 나 어때?',week:'이번 주 뭐 했지?'}[v];
       pushChat('me',label); pushChat('ai',localAnswer(v)); render(); break; }
-    case 'chatclear': S.chat=[]; write('lifeos.v5.chat',[]); render(); break;
+    case 'chatclear': if(confirm('대화 내역을 전부 지웁니다.')){ S.chat=[]; write('lifeos.v5.chat',[]); render(); } break;
+    case 'delmsg': { const k=+el.dataset.i;
+      S.chat.splice(S.chat[k-1]&&S.chat[k-1].role==='me'?k-1:k, S.chat[k-1]&&S.chat[k-1].role==='me'?2:1);
+      write('lifeos.v5.chat',S.chat); render(); break; }
     case 'askclear': { if(S.micKey==='ask') micStop(); S.ask='';
       const b=document.getElementById('askbox'); if(b){ b.value=''; b.focus(); } break; }
     case 'calmove': { const base=S.calMonth!=null?new Date(S.calMonth):new Date();
@@ -1755,6 +1804,20 @@ document.addEventListener('click', async e=>{
     case 'setdue': setDue(id,v); break;
     case 'del': S.items=S.items.filter(x=>x.id!==id); save.items(); S.open=null; render(); break;
     case 'quick': quickAdd(); break;
+    case 'selmode': S.selMode=!S.selMode; S.sel=[]; render(); break;
+    case 'pick': { S.sel = S.sel.includes(id) ? S.sel.filter(x=>x!==id) : S.sel.concat(id); render(); break; }
+    case 'selall': {
+      const vis = S.tab==='plan'
+        ? S.items.filter(i=>i.type==='task'&&i.status==='open').map(i=>i.id)
+        : S.items.filter(i=>{ const t=i.dueAt||i.occurredAt||i.createdAt;
+            return t&&sod(t)===(S.calDay!=null?S.calDay:sod(Date.now())); }).map(i=>i.id);
+      S.sel = S.sel.length===vis.length ? [] : vis; render(); break; }
+    case 'seldel': {
+      if(!S.sel.length){ toast('선택된 게 없습니다.'); break; }
+      if(confirm(S.sel.length+'건을 지웁니다. 되돌릴 수 없습니다.')){
+        S.items=S.items.filter(x=>!S.sel.includes(x.id));
+        save.items(); const n=S.sel.length; S.sel=[]; S.selMode=false;
+        checkDue(); render(); toast(n+'건을 지웠습니다.'); } break; }
     case 'star': { const t=S.items.find(x=>x.id===id); if(t){ t.star=!t.star; save.items(); render(); } break; }
     case 'edit': openEdit(id); break;
     case 'edit-close': S.edit=null; render(); break;
