@@ -87,6 +87,11 @@ textarea,input[type=text],input[type=password]{width:100%;background:var(--bg);b
 .viewer img{max-width:100%;max-height:60vh;border-radius:12px}
 .warn{border-left:4px solid var(--red);background:#FDF4F2;border-radius:10px;padding:14px 16px}
 .info{border-left:4px solid var(--blue);background:#F1F5FE;border-radius:10px;padding:14px 16px}
+.udot{display:inline-block;width:9px;height:9px;border-radius:5px;background:var(--red);
+  margin-right:7px;vertical-align:middle}
+.star{color:#E8A317;font-size:16px;margin-right:5px}
+.starbtn{background:none;border:none;color:var(--line);font-size:21px;line-height:1;padding:4px 6px}
+.starbtn.on{color:#E8A317}
 .pblock{margin-bottom:22px}
 .phead{display:flex;align-items:baseline;justify-content:space-between;border-left:4px solid var(--ink);
   padding:2px 0 2px 10px;margin-bottom:4px}
@@ -96,6 +101,8 @@ textarea,input[type=text],input[type=password]{width:100%;background:var(--bg);b
 .tt2{font-size:17px;font-weight:600;line-height:1.4}
 .tt2.off{text-decoration:line-through;color:var(--ink3)}
 .tmeta{font-size:13.5px;color:var(--ink2);margin-top:2px}
+.clrbtn{position:absolute;right:8px;top:8px;width:32px;height:32px;border-radius:16px;border:none;
+  background:var(--panel);color:var(--ink2);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center}
 .micbtn{width:44px;height:44px;flex:0 0 44px;border-radius:22px;border:1.5px solid var(--line);
   background:var(--bg);color:var(--ink);display:flex;align-items:center;justify-content:center}
 .micbtn.on{background:var(--red);border-color:var(--red);color:#fff}
@@ -742,6 +749,18 @@ function topTags(area,days){
     .forEach(i=>(i.tags||[]).forEach(t=>c[t]=(c[t]||0)+1));
   return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,8);
 }
+function urgent(t){
+  if(t.status==='done') return false;
+  if(t.dueAt){ const d=sod(t.dueAt);
+    if(d<sod(Date.now())) return true;
+    if(d===sod(Date.now())) return true; }
+  return staleTask(t)==='red';
+}
+function markDot(t){
+  if(urgent(t)) return '<span class="udot"></span>';
+  return '';
+}
+function starMark(t){ return t.star?'<span class="star">★</span>':''; }
 function staleTask(t){
   if(t.status!=='open')return null;
   const age=(Date.now()-t.createdAt)/DAY;
@@ -877,9 +896,14 @@ function home(){
         <div class="small">일정</div></div></div>`).join('')}
     ${tp.must.map(t=>`<div class="row">
       <button class="cb tap" data-act="toggle" data-id="${t.id}" aria-label="완료"></button>
-      <div style="flex:1" data-act="edit" data-id="${t.id}"><div style="font-weight:600">${esc(t.title)}</div>
+      <div style="flex:1" data-act="edit" data-id="${t.id}"><div style="font-weight:600">${markDot(t)}${starMark(t)}${esc(t.title)}</div>
         <div class="small">${t.dueAt?fmd(t.dueAt)+' · ':''}먼저 할 것</div></div></div>`).join('')}
   </div>`:''}
+
+  ${pendingExports().length?`<div class="sec">
+    <button class="btn primary tap" data-act="icsall" style="display:flex;align-items:center;justify-content:center;gap:8px">
+      🔔 폰 알림 등록 (${pendingExports().length}건)</button>
+    <p class="small" style="margin-top:8px;text-align:center">받은 파일 열고 ‘전체 추가’ 한 번이면 잠금화면에서 울립니다.</p></div>`:''}
 
   ${iv?`<div class="sec"><h3>AI가 짚은 것</h3>
     <div class="${iv.level==='red'?'warn':'info'}">
@@ -1024,7 +1048,7 @@ function calendar(){
     <div style="height:14px"></div>
     <button class="btn ghost tap" data-act="newevent" data-v="${sel}">＋ 이날 일정 직접 추가</button>
     <div style="height:10px"></div>
-    <button class="btn ghost tap" data-act="icsall">폰 캘린더로 넘겨서 알림 받기</button>
+    <button class="btn ghost tap" data-act="icsall">폰 알림 등록 (${pendingExports().length}건)</button>
   </div>`;
 }
 
@@ -1034,22 +1058,27 @@ function plan(){
   const evs=S.items.filter(i=>i.type==='event'&&i.dueAt&&i.status!=='done');
   const rems=S.items.filter(i=>i.type==='reminder'&&i.status!=='done');
   const done=tasks.filter(t=>t.status==='done').sort((a,b)=>(b.doneAt||0)-(a.doneAt||0)).slice(0,5);
-  const today=sod(Date.now());
-  const g={ over:[], today:[], week:[], none:[], ask:[] };
+  const today=sod(Date.now()), tomorrow=today+DAY;
+  const g={ over:[], today:[], tomorrow:[], week:[], later:[], none:[], ask:[] };
   open.forEach(t=>{
     if(t.needsConfirm) g.ask.push(t);
     else if(!t.dueAt) g.none.push(t);
-    else if(sod(t.dueAt)<today) g.over.push(t);
-    else if(sod(t.dueAt)===today) g.today.push(t);
-    else if(t.dueAt<Date.now()+7*DAY) g.week.push(t);
-    else g.none.push(t);
+    else { const d=sod(t.dueAt);
+      if(d<today) g.over.push(t);
+      else if(d===today) g.today.push(t);
+      else if(d===tomorrow) g.tomorrow.push(t);
+      else if(d<=today+7*DAY) g.week.push(t);
+      else g.later.push(t); }
   });
+  const bydate=(a,b)=>((b.star?1:0)-(a.star?1:0))||((a.dueAt||0)-(b.dueAt||0));
+  ['over','today','tomorrow','week','later'].forEach(k=>g[k].sort(bydate));
   const row=t=>`<div class="trow">
     <button class="cb tap ${t.status==='done'?'on':''}" data-act="toggle" data-id="${t.id}" aria-label="완료"></button>
     <div style="flex:1;min-width:0" data-act="edit" data-id="${t.id}">
-      <div class="tt2 ${t.status==='done'?'off':''}">${esc(t.title)}</div>
-      <div class="tmeta">${t.dueAt?fmd(t.dueAt)+' '+ftime(t.dueAt):'기한 없음'}
+      <div class="tt2 ${t.status==='done'?'off':''}">${markDot(t)}${starMark(t)}${esc(t.title)}</div>
+      <div class="tmeta">${t.dueAt?fmd(t.dueAt)+' ('+WD[new Date(t.dueAt).getDay()]+') '+ftime(t.dueAt):'기한 없음'}
         ${(t.tags||[]).slice(0,2).map(x=>'· #'+esc(x)).join(' ')}</div></div>
+    <button class="starbtn tap ${t.star?'on':''}" data-act="star" data-id="${t.id}" aria-label="중요 표시">${t.star?'★':'☆'}</button>
     <button class="tap" data-act="edit" data-id="${t.id}" style="background:none;border:none;color:var(--ink3);padding:6px">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L20 8l-4-4L4 16z"/></svg></button></div>`;
   const block=(title,color,items,extra)=>items.length?`<div class="pblock">
@@ -1061,10 +1090,6 @@ function plan(){
       <h2 style="font-size:22px">할 일</h2>
       <button class="pill sm tap" data-act="tab" data-v="calendar">캘린더</button></div>
 
-    <button class="btn dark tap" data-act="capture-task"
-      style="margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:10px;font-size:18px;padding:19px">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
-      말해서 넣기</button>
     <div style="display:flex;gap:8px;margin-bottom:18px">
       <input type="text" id="quick" placeholder="한 줄 적기 (내일 3시처럼 시간도 됩니다)" style="flex:1" value="${esc(S.quickText||'')}">
       <button class="pill tap" data-act="quick" style="padding:0 16px">추가</button></div>
@@ -1079,9 +1104,14 @@ function plan(){
             .map(([v,l])=>`<button class="pill sm tap" data-act="setdue" data-id="${t.id}" data-v="${v}">${l}</button>`).join('')}
           <button class="pill sm tap" data-act="edit" data-id="${t.id}">직접</button></div></div>`).join('')}</div>`:''}
 
-    ${block('지났음','var(--red)',g.over)}
+    ${open.filter(t=>t.star&&!t.needsConfirm).length?`<div class="pblock">
+      <div class="phead" style="border-color:#E8A317"><b>★ 중요</b><span>${open.filter(t=>t.star&&!t.needsConfirm).length}</span></div>
+      ${open.filter(t=>t.star&&!t.needsConfirm).sort(bydate).map(row).join('')}</div>`:''}
+    ${block('지났음 · 놓친 것','var(--red)',g.over)}
     ${block('오늘','var(--ink)',g.today)}
-    ${block('이번 주','var(--blue)',g.week)}
+    ${block('내일','var(--blue)',g.tomorrow)}
+    ${block('이번 주 안','var(--blue)',g.week)}
+    ${block('그 이후','var(--ink3)',g.later)}
     ${block('기한 없음','var(--ink3)',g.none)}
 
     ${evs.length?`<div class="pblock">
@@ -1096,8 +1126,9 @@ function plan(){
       ${rems.map(r=>`<div class="trow">
         <div style="flex:1" data-act="edit" data-id="${r.id}"><div class="tt2">${esc(r.title)}</div>
           <div class="tmeta">${r.timeType==='recurring'?'매일 '+(r.time||''):(r.fireAt?fmd(r.fireAt)+' '+ftime(r.fireAt):'시각 미정')}</div></div>
-        <button class="pill sm tap" data-act="ics" data-id="${r.id}">폰 알림</button></div>`).join('')}
-      <p class="small" style="margin-top:8px">‘폰 알림’을 누르면 아이폰 캘린더에 등록돼 앱이 꺼져 있어도 울립니다.</p></div>`:''}
+        ${needsExport(r)?'<span class="small" style="color:var(--red);font-weight:700">폰 미등록</span>':'<span class="small" style="color:var(--green)">폰 등록됨</span>'}</div>`).join('')}
+      ${pendingExports().length?`<button class="btn primary tap" style="margin-top:10px" data-act="icsall">
+        폰 알림으로 한 번에 등록 (${pendingExports().length}건)</button>`:''}</div>`:''}
 
     ${done.length?`<div class="pblock">
       <div class="phead" style="border-color:var(--green)"><b>끝냄</b><span>${done.length}</span></div>
@@ -1115,17 +1146,21 @@ function assist(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
       ${chips.map(([t,k])=>`<button class="pill sm tap" data-act="chip" data-v="${k}">${t}</button>`).join('')}
     </div>
+    ${S.chat.length?`<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="tap" data-act="chatclear" style="background:none;border:none;color:var(--ink3);font-size:13.5px">대화 내역 지우기</button></div>`:''}
     <div class="chat">
       ${S.chat.length? S.chat.map(m=>`<div class="bub ${m.role}">${esc(m.text)}</div>`).join('')
         :`<div class="bub ai">무엇이든 물어보세요. "이번 주말에 쉬어도 될까?" 처럼 판단이 필요한 것도 좋습니다.</div>`}
       ${S.busy?'<div class="bub ai">생각 중…</div>':''}
     </div>
     <div class="askbar">
-      <textarea id="askbox" rows="2" placeholder="물어보기">${esc(S.ask)}</textarea>
+      <div style="position:relative">
+        <textarea id="askbox" rows="2" placeholder="물어보기" style="padding-right:46px">${esc(S.ask)}</textarea>
+        <button class="clrbtn tap" data-act="askclear" aria-label="입력 지우기">✕</button>
+      </div>
       <div style="display:flex;gap:8px;margin-top:8px">
         ${micBtn('ask')}
         <button class="pill tap" data-act="askai" style="flex:1;text-align:center">${S.busy?'…':'보내기'}</button>
-        ${S.chat.length?'<button class="pill sm tap" data-act="chatclear">지우기</button>':''}
       </div>
     </div>
     ${hasKey()?'':'<p class="small" style="margin-top:12px">설정에서 AI를 연결해야 자유 질문이 됩니다. 위 3개 버튼은 연결 없이도 동작합니다.</p>'}
@@ -1246,8 +1281,12 @@ function settings(){
 
     <div class="card" style="margin-bottom:14px"><h3>알림</h3>
       <p class="sub" style="margin-bottom:12px">웹앱은 꺼져 있을 때 스스로 알림을 띄우지 못합니다.
-        대신 일정·알림을 아이폰 캘린더로 넘기면 잠금화면에서 그대로 울립니다.</p>
-      <button class="btn primary tap" data-act="icsall">일정·알림 폰 캘린더로 넘기기</button>
+        아이폰 캘린더로 한 번 넘겨두면 그다음부터는 잠금화면에서 울립니다.
+        <b>설정 › 앱 › 캘린더 › 기본 캘린더</b>를 하나 지정해두면 캘린더 고르는 단계가 사라져
+        ‘열기 → 전체 추가’ 두 번이면 끝납니다.</p>
+      <button class="btn primary tap" data-act="icsall">새로 생긴 것만 등록 (${pendingExports().length}건)</button>
+      <div style="height:10px"></div>
+      <button class="btn ghost tap" data-act="icsallforce">전부 다시 내보내기</button>
       <div class="row" style="margin-top:10px"><div style="flex:1"><div style="font-weight:600">앱 안 알림</div>
         <div class="small">앱이 열려 있을 때만</div></div>
         <button class="pill sm tap ${S.cfg.notify?'on':''}" data-act="toggleNotify">${S.cfg.notify?'켜짐':'꺼짐'}</button></div>
@@ -1620,12 +1659,22 @@ function icsBody(list){
   L.push('END:VCALENDAR');
   return L.join('\r\n');
 }
+function needsExport(i){
+  if(i.status==='done') return false;
+  if(i.type!=='reminder'&&i.type!=='event') return false;
+  const stamp=(i.dueAt||0)+'/'+(i.time||'')+'/'+i.title;
+  return i.exported!==stamp;
+}
+function pendingExports(){ return S.items.filter(needsExport); }
 function downloadICS(list,name){
-  if(!list.length){ toast('내보낼 일정이 없습니다.'); return; }
+  if(!list.length){ toast('폰에 넘길 새 알림이 없습니다.'); return; }
   const blob=new Blob([icsBody(list)],{type:'text/calendar'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=(name||'lifeos')+'.ics'; a.click();
-  toast('내려받은 파일을 열면 아이폰 캘린더에 추가됩니다.');
+  a.download=(name||'lifeos-알림')+'.ics'; a.click();
+  list.forEach(i=>{ i.exported=(i.dueAt||0)+'/'+(i.time||'')+'/'+i.title; });
+  save.items();
+  toast(list.length+'건을 담았습니다. 받은 파일을 열고 ‘전체 추가’만 누르면 끝입니다.');
+  setTimeout(render,600);
 }
 function exportBackup(){
   const blob=new Blob([JSON.stringify({sessions:S.sessions,items:S.items,photos:S.photos,events:S.events,at:Date.now()},null,2)],{type:'application/json'});
@@ -1675,6 +1724,8 @@ document.addEventListener('click', async e=>{
     case 'chip': { const label={plan:'오늘 뭐부터 할까?',status:'요즘 나 어때?',week:'이번 주 뭐 했지?'}[v];
       pushChat('me',label); pushChat('ai',localAnswer(v)); render(); break; }
     case 'chatclear': S.chat=[]; write('lifeos.v5.chat',[]); render(); break;
+    case 'askclear': { if(S.micKey==='ask') micStop(); S.ask='';
+      const b=document.getElementById('askbox'); if(b){ b.value=''; b.focus(); } break; }
     case 'calmove': { const base=S.calMonth!=null?new Date(S.calMonth):new Date();
       S.calMonth=new Date(base.getFullYear(), base.getMonth()+(+v), 1).getTime(); render(); break; }
     case 'calday': S.calDay=+v; render(); break;
@@ -1704,6 +1755,7 @@ document.addEventListener('click', async e=>{
     case 'setdue': setDue(id,v); break;
     case 'del': S.items=S.items.filter(x=>x.id!==id); save.items(); S.open=null; render(); break;
     case 'quick': quickAdd(); break;
+    case 'star': { const t=S.items.find(x=>x.id===id); if(t){ t.star=!t.star; save.items(); render(); } break; }
     case 'edit': openEdit(id); break;
     case 'edit-close': S.edit=null; render(); break;
     case 'ed-type': S.edit.type=v; render(); break;
@@ -1778,8 +1830,8 @@ document.addEventListener('click', async e=>{
     case 'delphotos': if(confirm('사진을 전부 지웁니다.')){ for(const p of S.photos) await delThumb(p.id);
       S.photos=[]; save.photos(); render(); toast('사진을 모두 지웠습니다.'); } break;
     case 'export': exportBackup(); break;
-    case 'ics': { const it=S.items.find(x=>x.id===id); if(it) downloadICS([it], (it.title||'알림').slice(0,12)); break; }
-    case 'icsall': downloadICS(S.items.filter(x=>(x.type==='reminder'||x.type==='event')&&x.status!=='done'),'lifeos-일정'); break;
+    case 'icsall': downloadICS(pendingExports(),'lifeos-알림'); break;
+    case 'icsallforce': downloadICS(S.items.filter(x=>(x.type==='reminder'||x.type==='event')&&x.status!=='done'),'lifeos-전체'); break;
     case 'seed': seed(); break;
     case 'reset': if(confirm('모든 기록을 지웁니다. 되돌릴 수 없습니다.')){
       S.sessions=[];S.items=[];S.events=[];S.cache={};
