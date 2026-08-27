@@ -205,6 +205,20 @@ function remapArea(old, it){
   return MIG[old]||'LIFE';
 }
 
+const TOPICS={
+  health:{name:'건강',icon:'🏃',re:/운동|러닝|헬스|걷|수면|잠|약|병원|컨디션|피곤|스트레스|체중|식사|산책/},
+  money:{name:'돈',icon:'💰',re:/돈|지출|저축|투자|카드|적금|월급|비용|구독|보험|대출|세금/},
+  work:{name:'일',icon:'🏭',re:/회사|업무|시험|설비|과제|보고|팀|프로젝트|정비|출장|회의|자격증|공부|논문|강의/},
+  life:{name:'생활',icon:'🏡',re:null}
+};
+const TORDER=['health','money','work','life'];
+function topicOf(i){
+  const t=((i.tags||[]).join(' ')+' '+(i.title||'')+' '+(i.detail||''));
+  if(TOPICS.health.re.test(t)) return 'health';
+  if(TOPICS.money.re.test(t)) return 'money';
+  if(TOPICS.work.re.test(t)) return 'work';
+  return 'life';
+}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sod=t=>{const d=new Date(t);d.setHours(0,0,0,0);return d.getTime();};
@@ -234,7 +248,7 @@ const S={ tab:'home', sessions:read(K.ses,[]), items:read(K.items,[]), photos:re
   edit:null, ask:'', askAns:'', sim:null, goalPlan:null, ent:null,
   micKey:null, quickText:'', calMonth:null, calDay:null,
   chat:read('lifeos.v5.chat',[]), libTab:'timeline', selMode:false, sel:[], doneOpen:false,
-  icsUrl:null, icsList:null, calPrompt:null, topic:'health', calPick:null, pickUrl:null };
+  icsUrl:null, icsList:null, calPrompt:null, topic:'health', calPick:null, pickUrl:null, upTab:'list' };
 const save={ ses:()=>write(K.ses,S.sessions), items:()=>write(K.items,S.items),
   photos:()=>write(K.photos,S.photos), ev:()=>write(K.ev,S.events.slice(-400)),
   cache:()=>write(K.cache,S.cache), cfg:()=>write(K.cfg,S.cfg) };
@@ -451,7 +465,7 @@ ${photoCaptions?'\n[함께 올린 사진]\n'+photoCaptions:''}
 - reminder면 schedule에 {"type":"recurring","time":"22:00"} 또는 {"type":"once","when":"내일 오전"} 형태로.
 - 업무 기록이면 work에 설비/문제/조치/결과. 없으면 null.
 - entities: 반복해서 등장할 만한 고유 대상만 [{"kind":"person|place|equipment|project","name":"이름"}] 로. 없으면 [].
-- questions는 정말 모호할 때만, 최대 2개.${mode==='task'?'\n- **할 일 화면에서 말했다. 특별한 이유가 없으면 type은 task로 한다.**':''}${mode==='event'?'\n- **캘린더에서 말했다. 특별한 이유가 없으면 type은 event로 하고 due_expression에 시각 표현을 반드시 담는다.**':''}
+- questions는 정말 모호할 때만, 최대 2개.${mode==='task'?'\n- **할 일 화면에서 말했다. 특별한 이유가 없으면 type은 task로 한다.**':''}${mode==='event'?'\n- **캘린더에서 말했다. 특별한 이유가 없으면 type은 event로 하고 due_expression에 시각 표현을 반드시 담는다.**':''}${mode==='thought'?'\n- **생각 화면에서 말했다. type은 record로 하고 tags에 "생각"을 반드시 넣는다. 다짐이면 "원칙", 목표면 "목표"도 함께.**':''}
 - JSON만 출력. 설명·마크다운 금지.
 
 {"summary":"사건을 한 줄로","items":[{"type":"record","area":"WORK","tags":[],"title":"","detail":"","sentiment":"plus","due_expression":null,"repeat":null,"work":null,"entities":[]}],"questions":[]}`));
@@ -711,7 +725,9 @@ function saveRaw(){
   }
   const fresh=S.items.slice(-keep.length).filter(x=>x.dueAt&&(x.type==='task'||x.type==='event'));
   if(fresh.length) S.calPrompt=fresh.map(x=>x.id);
-  const back = c.mode==='task' ? 'plan' : c.mode==='event' ? 'calendar' : 'timeline';
+  if(c.mode==='thought') keep.forEach(i=>{ i.type='record';
+    i.tags=[...new Set([...(i.tags||[]),'생각'])]; });
+  const back = c.mode==='task' ? 'upcoming' : c.mode==='event' ? 'upcoming' : c.mode==='thought' ? 'thoughts' : 'timeline';
   save.ses(); save.items(); S.capture=null; S.result=null; S.tab=back; render();
   toast(c.mode==='task' ? '할 일로 저장했습니다.' : '원본을 저장했습니다. 나중에 AI로 정리할 수 있습니다.');
 }
@@ -881,7 +897,7 @@ function intervention(){
 }
 
 /* ================= 화면 ================= */
-function view(){ return ({home,calendar,plan,assist,library,review,settings,topic}[S.tab]||home)(); }
+function view(){ return ({home,upcoming,thoughts,assist,library,review,settings,topic}[S.tab]||home)(); }
 
 function home(){
   const d=new Date(), iv=intervention(), tp=todayPlan();
@@ -1038,7 +1054,7 @@ function timelineBody(){
   return out;
 }
 
-function calendar(){
+function calendarBody(){
   const now=new Date();
   const cm = S.calMonth!=null ? new Date(S.calMonth) : new Date(now.getFullYear(),now.getMonth(),1);
   const y=cm.getFullYear(), m=cm.getMonth();
@@ -1067,10 +1083,10 @@ function calendar(){
   }
   const list=(dayItems[sel]||[]).sort((a,b)=>{
     const ta=a.dueAt||a.occurredAt||a.createdAt, tb=b.dueAt||b.occurredAt||b.createdAt; return ta-tb;});
-  return `<div style="padding-top:18px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+  return `<div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 14px">
       <button class="pill sm tap" data-act="calmove" data-v="-1">‹</button>
-      <h2 style="font-size:21px">${y}년 ${m+1}월</h2>
+      <h2 style="font-size:20px">${y}년 ${m+1}월</h2>
       <button class="pill sm tap" data-act="calmove" data-v="1">›</button></div>
     <div class="cgrid head">${['일','월','화','수','목','금','토'].map(w=>`<div>${w}</div>`).join('')}</div>
     <div class="cgrid">${cells.join('')}</div>
@@ -1104,7 +1120,7 @@ function calendar(){
   </div>`;
 }
 
-function plan(){
+function planBody(){
   const tasks=S.items.filter(i=>i.type==='task');
   const open=tasks.filter(t=>t.status==='open');
   const doneAll=tasks.filter(t=>t.status==='done').sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
@@ -1145,10 +1161,7 @@ function plan(){
     <div class="phead" style="border-color:${color}"><b style="color:${color}">${title}</b></div>
     ${items.map(row).join('')}</div>`:'';
 
-  return `<div style="padding-top:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h2 style="font-size:22px">할 일</h2>
-      <button class="pill sm tap" data-act="tab" data-v="calendar">캘린더</button></div>
+  return `<div>
     <p class="small" style="margin-bottom:12px">탭하면 고치기, 왼쪽으로 밀면 수정·선택·지우기가 나옵니다.</p>
 
     <div style="display:flex;gap:8px;margin-bottom:18px">
@@ -1184,6 +1197,52 @@ function plan(){
       </div>`:''}
 
     ${!open.length?'<p class="sub">남은 게 없습니다. 가운데 🎙️로 말해 보세요.</p>':''}
+  </div>`;
+}
+
+function upcoming(){
+  const mode=S.upTab||'list';
+  const openN=S.items.filter(i=>i.type==='task'&&i.status==='open').length;
+  const evN=S.items.filter(i=>i.type==='event'&&i.status!=='done'&&i.dueAt&&i.dueAt>Date.now()-DAY).length;
+  return `<div style="padding-top:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="font-size:22px">앞으로</h2>
+      <span class="small">할 일 ${openN} · 일정 ${evN}</span></div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="pill tap ${mode==='list'?'on':''}" data-act="uptab" data-v="list" style="flex:1">목록</button>
+      <button class="pill tap ${mode==='cal'?'on':''}" data-act="uptab" data-v="cal" style="flex:1">달력</button>
+    </div>
+    ${mode==='cal'? calendarBody() : planBody()}
+  </div>`;
+}
+
+function thoughts(){
+  const list=S.items.filter(i=>i.type==='record' &&
+    ((i.tags||[]).some(t=>['생각','원칙','목표','다짐','깨달음','가치관'].includes(t))))
+    .sort((a,b)=>(b.occurredAt||b.createdAt)-(a.occurredAt||a.createdAt));
+  const by={}; list.forEach(m=>{const y=new Date(m.occurredAt||m.createdAt).getFullYear();(by[y]=by[y]||[]).push(m);});
+  const acts=id=>`<div class="acts">
+    <button class="a-edit" data-act="edit" data-id="${id}">수정</button>
+    <button class="a-sel" data-act="selstart" data-id="${id}">선택</button>
+    <button class="a-del" data-act="sheetdel" data-id="${id}">지우기</button></div>`;
+  return `<div style="padding-top:16px">
+    <h2 style="font-size:22px;margin-bottom:6px">생각</h2>
+    <p class="sub" style="margin-bottom:16px">다짐·원칙·목표처럼 오래 남길 것들입니다.
+      AI가 조언할 때 여기 있는 기준을 먼저 봅니다.</p>
+    <button class="btn dark tap" data-act="capture-thought"
+      style="margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:10px;font-size:17px;padding:17px">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+      생각 남기기</button>
+    ${list.length? Object.keys(by).sort((a,b)=>b-a).map(y=>`
+      <div class="datehead"><b>${y}년</b><span class="small">${by[y].length}개</span></div>
+      ${by[y].map(m=>`<div class="swipe">${acts(m.id)}
+        <div class="front card" style="margin:12px 0" data-act="edit" data-id="${m.id}">
+          <div class="small">${fdate(m.occurredAt||m.createdAt)}</div>
+          <div style="font-size:19px;font-weight:700;margin:6px 0 4px">${esc(m.title)}</div>
+          <div class="sub">${esc(m.detail||'')}</div>
+          ${(m.tags||[]).map(t=>`<span class="tagchip">#${esc(t)}</span>`).join('')}
+        </div></div>`).join('')}`).join('')
+      : '<p class="sub">아직 없습니다. 위 버튼으로 지금 드는 생각을 말해 보세요.</p>'}
   </div>`;
 }
 
@@ -1268,11 +1327,10 @@ function library(){
   const head=`<div style="padding-top:16px">
     <h2 style="font-size:22px;margin-bottom:12px">기록</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-      ${[['timeline','타임라인'],['mind','생각'],['graph','연결']].map(([k,l])=>
+      ${[['timeline','타임라인'],['graph','연결']].map(([k,l])=>
         `<button class="pill sm tap ${seg===k?'on':''}" data-act="libtab" data-v="${k}">${l}</button>`).join('')}
       <button class="pill sm tap" data-act="import" style="margin-left:auto">＋ 사진</button>
     </div></div>`;
-  if(seg==='mind') return head+mindBody();
   if(seg==='graph') return head+graphBody();
   return head+timelineBody();
 }
@@ -1518,7 +1576,7 @@ function captureModal(){
   const phs=c.photoIds;
   return `<div class="modal fade">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <span style="font-size:19px;font-weight:700">${c.mode==='task'?'할 일 말하기':c.mode==='event'?'일정 말하기':'기록하기'}</span>
+      <span style="font-size:19px;font-weight:700">${c.mode==='task'?'할 일 말하기':c.mode==='event'?'일정 말하기':c.mode==='thought'?'생각 남기기':'기록하기'}</span>
       <button class="pill sm tap" data-act="cap-close">닫기</button></div>
 
     <button class="mic tap ${S.listening?'on':''}" data-act="mic">
@@ -1544,7 +1602,7 @@ function captureModal(){
 }
 
 /* ================= 렌더 ================= */
-const TABS=[['home','홈'],['calendar','캘린더'],['_mic',''],['plan','할 일'],['assist','비서']];
+const TABS=[['home','홈'],['upcoming','앞으로'],['_mic',''],['thoughts','생각'],['assist','비서']];
 function render(){
   document.getElementById('app').innerHTML=view();
   document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>k==='_mic'
@@ -2009,7 +2067,12 @@ document.addEventListener('click', async e=>{
   const el=e.target.closest('[data-act]'); if(!el)return;
   const a=el.dataset.act, v=el.dataset.v, id=el.dataset.id, i=+el.dataset.i;
   switch(a){
-    case 'tab': S.tab=v; S.open=null; render(); break;
+    case 'tab': { let t=v;
+      if(t==='plan'){ t='upcoming'; S.upTab='list'; }
+      if(t==='calendar'){ t='upcoming'; S.upTab='cal'; }
+      S.tab=t; S.open=null; render(); break; }
+    case 'uptab': S.upTab=v; render(); break;
+    case 'capture-thought': openCapture('personal','thought'); break;
     case 'capture': openCapture('personal'); break;
     case 'capture-task': openCapture('personal','task'); break;
     case 'capture-event': openCapture('personal','event'); break;
