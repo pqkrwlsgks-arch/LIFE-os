@@ -206,18 +206,17 @@ function remapArea(old, it){
 }
 
 const TOPICS={
-  health:{name:'건강',icon:'🏃',re:/운동|러닝|헬스|걷|수면|잠|약|병원|컨디션|피곤|스트레스|체중|식사|산책/},
-  money:{name:'돈',icon:'💰',re:/돈|지출|저축|투자|카드|적금|월급|비용|구독|보험|대출|세금/},
-  work:{name:'일',icon:'🏭',re:/회사|업무|시험|설비|과제|보고|팀|프로젝트|정비|출장|회의|자격증|공부|논문|강의/},
+  work:{name:'일',icon:'🏭',re:/회사|업무|출근|퇴근|야근|회식|상사|팀장|부서|동료|거래처|납품|고객|시험기|설비|장비|정비|점검|측정|실험|시료|보고|보고서|결재|회의|미팅|출장|프로젝트|과제|성과|평가|일정협의|공정|현장/},
+  learn:{name:'배움',icon:'📚',re:/공부|학습|자격증|시험(?!기)|강의|수업|논문|책|독서|영어|교육|세미나|학회|연구|스터디/},
+  health:{name:'건강',icon:'🏃',re:/운동|러닝|달리기|헬스|요가|등산|걷기|산책|수면|잠|피곤|컨디션|스트레스|병원|약|치과|체중|다이어트|식단|금주|금연/},
+  money:{name:'돈',icon:'💰',re:/돈|지출|소비|저축|투자|주식|카드|적금|월급|급여|비용|구독|보험|대출|세금|연금|가계부/},
   life:{name:'생활',icon:'🏡',re:null}
 };
-const TORDER=['health','money','work','life'];
+const TORDER=['work','learn','health','money','life'];
 function topicOf(i){
   if(i.topic && TOPICS[i.topic]) return i.topic;
   const t=((i.tags||[]).join(' ')+' '+(i.title||'')+' '+(i.detail||''));
-  if(TOPICS.health.re.test(t)) return 'health';
-  if(TOPICS.money.re.test(t)) return 'money';
-  if(TOPICS.work.re.test(t)) return 'work';
+  for(const k of TORDER){ const re=TOPICS[k].re; if(re && re.test(t)) return k; }
   return 'life';
 }
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -459,7 +458,14 @@ ${photoCaptions?'\n[함께 올린 사진]\n'+photoCaptions:''}
 - type 세 가지만 쓴다: record(이미 일어난 일·생각·다짐) / task(해야 할 일·목표) / event(시각이 정해진 약속·회의·반복 알림)
 - 시각이 정해진 것은 event. 예: "내일 3시 회의", "매일 밤 10시 약" → event
 - "매일/매주"처럼 반복이면 repeat에 "daily" 또는 "weekly", 아니면 null
-- tags: 한국어 태그 1~3개 (예: ["운동","러닝"], ["회사","시험기"]). 분류는 태그로만 한다.
+- tags: 한국어 태그 1~3개 (예: ["운동","러닝"], ["회사","시험기"])
+- topic: 아래 다섯 중 하나를 반드시 고른다
+  work(회사 일 전부 — 업무·설비·보고·회의·출장·회식·동료·야근 포함)
+  learn(공부·자격증·독서·강의·연구)
+  health(운동·수면·컨디션·병원·식단)
+  money(지출·저축·투자·카드·월급)
+  life(가족·친구·여행·취미·집안일·그 외 일상)
+  판단 기준: 회사와 관련되면 회식·야근·동료 만남도 work다.
 - sentiment: plus(진전) / minus(못함·문제) / neutral
 - title 20자 이내, detail 한 문장
 - **날짜는 절대 계산하지 마라.** 사용자가 말한 시간 표현을 due_expression에 그대로 옮겨라 (예: "다음 주", "내일 오전"). 없으면 null.
@@ -767,6 +773,7 @@ function commit(){
     const base={id:uid(),sessionId:c.id,type:i.type,area:i.area,tags:i.tags||[],
       title:i.title,detail:i.detail||'',sentiment:i.sentiment||'neutral',
       occurredAt:occ,createdAt:now,scope:c.scope,work:i.work||null,
+      topic:(i.topic&&TOPICS[i.topic])?i.topic:null,
       entities:Array.isArray(i.entities)?i.entities.filter(e=>e&&e.name).slice(0,4):[]};
     if(i.type==='task'||i.type==='event'){
       Object.assign(base,{status:'open',dueAt:i._dueAt,duePrecision:i._precision,
@@ -1497,13 +1504,24 @@ function openEdit(id){
     star: !!it.star };
   render();
 }
+function quickDate(v){
+  const base=sod(Date.now());
+  const D=x=>new Date(x-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  if(v==='today') return D(base);
+  if(v==='tomorrow') return D(base+DAY);
+  if(v==='weekend'){ const d=new Date(base); const df=(6-d.getDay()+7)%7||7; return D(base+df*DAY); }
+  if(v==='nextmon'){ const d=new Date(base); const df=(1-d.getDay()+7)%7||7; return D(base+df*DAY); }
+  return '';
+}
 function editModal(){
   const e=S.edit; if(!e) return '';
   const isPlan = e.type==='task'||e.type==='event';
   return `<div class="modal fade">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <h2 style="font-size:21px">항목 고치기</h2>
-      <button class="pill sm tap" data-act="edit-close">닫기</button></div>
+      <div style="display:flex;gap:8px">
+        <button class="pill sm tap on" data-act="edit-save">저장</button>
+        <button class="pill sm tap" data-act="edit-close">닫기</button></div></div>
 
     <p class="small" style="font-weight:700;margin-bottom:8px">종류</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
@@ -1545,7 +1563,8 @@ function editModal(){
     </div>
     ${isPlan?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
       ${[['today','오늘'],['tomorrow','내일'],['weekend','주말'],['nextmon','다음 주 월'],['clear','기한 지우기']]
-        .map(([v,l])=>`<button class="pill sm tap" data-act="ed-quick" data-v="${v}">${l}</button>`).join('')}</div>`:''}
+        .map(([v,l])=>`<button class="pill sm tap ${quickDate(v)===e.date&&(v!=='clear'||!e.date)?'on':''}"
+          data-act="ed-quick" data-v="${v}">${l}</button>`).join('')}</div>`:''}
 
     <div style="height:22px"></div>
     <button class="btn primary tap" data-act="edit-save">저장</button>
@@ -1623,6 +1642,7 @@ function render(){
     ?`<div class="fab"><button class="fabbtn tap" data-act="capture" aria-label="기록하기">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button></div>`
     :`<button class="tap ${S.tab===k?'on':''}" data-act="tab" data-v="${k}">${l}</button>`).join('');
+  const mOld=document.querySelector('.modal'); const mTop=mOld?mOld.scrollTop:0;
   document.querySelectorAll('.modal').forEach(x=>x.remove());
   if(S.capture){ const d=document.createElement('div'); d.innerHTML=captureModal();
     document.body.appendChild(d.firstElementChild); }
@@ -1652,6 +1672,7 @@ function render(){
   const q=document.getElementById('quick');
   if(q){ q.onkeydown=e=>{ if(e.key==='Enter') quickAdd(); }; q.oninput=e=>{ S.quickText=e.target.value; }; }
   const ab=document.getElementById('askbox'); if(ab) ab.oninput=e=>{ S.ask=e.target.value; };
+  const mNew=document.querySelector('.modal'); if(mNew&&mTop) mNew.scrollTop=mTop;
   loadThumbs();
   if(S._last!==S.tab&&!S.capture){S._last=S.tab;window.scrollTo({top:0});}
   if(S.tab==='assist'&&S.chat.length){ const c=document.querySelector('.chat');
@@ -2183,14 +2204,16 @@ document.addEventListener('click', async e=>{
     case 'ed-type': S.edit.type=v; render(); break;
     case 'ed-rep': S.edit.repeat=v||null; render(); break;
     case 'ed-topic': S.edit.topic=v||''; render(); break;
-    case 'ed-quick': { const base=sod(Date.now()); const D=x=>new Date(x-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
-      if(v==='today') S.edit.date=D(base);
-      else if(v==='tomorrow') S.edit.date=D(base+DAY);
-      else if(v==='weekend'){const d=new Date(base);const df=(6-d.getDay()+7)%7||7;S.edit.date=D(base+df*DAY);}
-      else if(v==='nextmon'){const d=new Date(base);const df=(1-d.getDay()+7)%7||7;S.edit.date=D(base+df*DAY);}
-      else {S.edit.date='';S.edit.time='';}
-      if(v!=='clear'&&!S.edit.time) S.edit.time='09:00';
-      render(); break; }
+    case 'ed-quick': {
+      if(v==='clear'){ S.edit.date=''; S.edit.time=''; }
+      else { S.edit.date=quickDate(v); if(!S.edit.time) S.edit.time='09:00'; }
+      const de=document.getElementById('e-date'); if(de) de.value=S.edit.date;
+      const te=document.getElementById('e-time'); if(te) te.value=S.edit.time;
+      document.querySelectorAll('[data-act="ed-quick"]').forEach(b=>{
+        const on = b.dataset.v==='clear' ? !S.edit.date : (quickDate(b.dataset.v)===S.edit.date && !!S.edit.date);
+        b.classList.toggle('on', on); });
+      toast(S.edit.date? S.edit.date+' 로 정했습니다.' : '기한을 지웠습니다.');
+      break; }
     case 'edit-save': {
       const e=S.edit, it=S.items.find(x=>x.id===e.id); if(!it){S.edit=null;render();break;}
       it.type=e.type; it.area=e.area; it.repeat=e.repeat||null; it.topic=e.topic||null;
@@ -2260,6 +2283,32 @@ document.addEventListener('click', async e=>{
       save.ses();save.items();save.ev();save.cache(); S.tab='home'; render(); toast('모두 지웠습니다.'); } break;
   }
 });
+/* 오른쪽으로 밀면 뒤로 (모달 닫기 / 홈으로) */
+let bk=null;
+document.addEventListener('touchstart', e=>{
+  if(e.target.closest('.swipe')) { bk=null; return; }
+  const t=e.touches[0];
+  bk={x:t.clientX, y:t.clientY, edge:t.clientX<48};
+},{passive:true});
+document.addEventListener('touchend', e=>{
+  if(!bk) return; const t=e.changedTouches[0];
+  const dx=t.clientX-bk.x, dy=Math.abs(t.clientY-bk.y);
+  const far = bk.edge ? dx>55 : dx>130;
+  if(far && dy<70) goBack();
+  bk=null;
+},{passive:true});
+function goBack(){
+  if(S.calPick){ S.calPick=null; render(); return; }
+  if(S.icsUrl){ if(S.icsUrl){try{URL.revokeObjectURL(S.icsUrl);}catch(e){}} S.icsUrl=null; S.icsList=null; render(); return; }
+  if(S.calPrompt){ S.calPrompt=null; render(); return; }
+  if(S.edit){ S.edit=null; render(); return; }
+  if(S.viewer){ S.viewer=null; document.querySelectorAll('.viewer').forEach(x=>x.remove()); return; }
+  if(S.capture){ closeCapture(true); return; }
+  if(S.selMode){ S.selMode=false; S.sel=[]; render(); return; }
+  if(['topic','library','review','settings'].includes(S.tab)){ S.tab='home'; render(); return; }
+  if(S.tab!=='home'){ S.tab='home'; render(); }
+}
+
 /* 왼쪽으로 밀면 수정·선택·지우기 */
 let sw=null;
 document.addEventListener('touchstart', e=>{
