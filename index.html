@@ -213,6 +213,7 @@ const TOPICS={
 };
 const TORDER=['health','money','work','life'];
 function topicOf(i){
+  if(i.topic && TOPICS[i.topic]) return i.topic;
   const t=((i.tags||[]).join(' ')+' '+(i.title||'')+' '+(i.detail||''));
   if(TOPICS.health.re.test(t)) return 'health';
   if(TOPICS.money.re.test(t)) return 'money';
@@ -248,7 +249,7 @@ const S={ tab:'home', sessions:read(K.ses,[]), items:read(K.items,[]), photos:re
   edit:null, ask:'', askAns:'', sim:null, goalPlan:null, ent:null,
   micKey:null, quickText:'', calMonth:null, calDay:null,
   chat:read('lifeos.v5.chat',[]), libTab:'timeline', selMode:false, sel:[], doneOpen:false,
-  icsUrl:null, icsList:null, calPrompt:null, topic:'health', calPick:null, pickUrl:null, upTab:'list' };
+  icsUrl:null, icsList:null, calPrompt:null, topic:'health', calPick:null, pickUrl:null, upTab:'list', moveId:null };
 const save={ ses:()=>write(K.ses,S.sessions), items:()=>write(K.items,S.items),
   photos:()=>write(K.photos,S.photos), ev:()=>write(K.ev,S.events.slice(-400)),
   cache:()=>write(K.cache,S.cache), cfg:()=>write(K.cfg,S.cfg) };
@@ -405,7 +406,7 @@ async function callAI(prompt,img){
 async function errText(r){
   let t=''; try{const j=await r.json(); t=(j.error&&(j.error.message||j.error.type))||'';}catch(e){}
   if(r.status===401||r.status===403) return 'API 키가 올바르지 않습니다';
-  if(r.status===429) return '호출 한도를 넘었습니다. 잠시 뒤 다시';
+  if(r.status===429) return '무료 한도를 다 썼습니다. 설정에서 flash-lite 계열 모델로 바꿔 보세요 (한도가 훨씬 큽니다)';
   if(r.status===404) return '‘'+curModel()+'’ 모델이 없습니다. 나 › 설정에서 모델을 다시 고르세요';
   return (t||('오류 '+r.status)).slice(0,110);
 }
@@ -1061,11 +1062,9 @@ function calendarBody(){
   const first=new Date(y,m,1), lastDay=new Date(y,m+1,0).getDate(), lead=first.getDay();
   const dayItems={};
   S.items.forEach(i=>{
-    let t=null;
-    if(i.type==='event'||i.type==='task') t=i.dueAt;
-    else t=i.occurredAt||i.createdAt;
-    if(!t) return;
-    const k=sod(t); (dayItems[k]=dayItems[k]||[]).push(i);
+    if(i.type!=='task'&&i.type!=='event') return;
+    if(!i.dueAt) return;
+    const k=sod(i.dueAt); (dayItems[k]=dayItems[k]||[]).push(i);
   });
   const sel = S.calDay!=null ? S.calDay : sod(Date.now());
   const cells=[];
@@ -1293,10 +1292,16 @@ function topic(){
   const tags={}; list.slice(0,80).forEach(i=>(i.tags||[]).forEach(g=>tags[g]=(tags[g]||0)+1));
   const top=Object.entries(tags).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const acts=id=>`<div class="acts">
-    <button class="a-edit" data-act="edit" data-id="${id}">수정</button>
-    <button class="a-sel" data-act="selstart" data-id="${id}">선택</button>
+    <button class="a-edit" data-act="movetopic" data-id="${id}">분류</button>
+    <button class="a-sel" data-act="edit" data-id="${id}">수정</button>
     <button class="a-del" data-act="sheetdel" data-id="${id}">지우기</button></div>`;
   return `<div style="padding-top:16px">
+    ${S.moveId?`<div class="card" style="margin-bottom:14px;border-color:var(--blue)">
+      <div style="font-weight:700;margin-bottom:10px">어디로 옮길까요?</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${TORDER.map(x=>`<button class="pill sm tap" data-act="settopic" data-v="${x}">${TOPICS[x].icon} ${TOPICS[x].name}</button>`).join('')}
+        <button class="pill sm tap" data-act="settopic" data-v="">자동</button>
+        <button class="pill sm tap" data-act="settopic" data-v="cancel">취소</button></div></div>`:''}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <h2 style="font-size:22px">${T.icon} ${T.name}</h2>
       <button class="pill sm tap" data-act="tab" data-v="home">홈</button></div>
@@ -1417,6 +1422,10 @@ function settings(){
       <div style="display:flex;gap:8px;margin-bottom:14px">
         ${Object.keys(PROV).map(k=>`<button class="pill tap ${p===k?'on':''}" data-act="prov" data-v="${k}" style="flex:1">${PROV[k].name}</button>`).join('')}</div>
       <p class="small" style="margin-bottom:10px">${PROV[p].hint} · 키 발급: ${PROV[p].url}</p>
+      ${p==='gemini'?`<div class="info" style="margin-bottom:12px;font-size:14px;line-height:1.8">
+        무료 한도는 모델마다 다릅니다. 상위 모델은 하루 수십 회로 금방 소진되니,
+        <b>flash-lite</b>가 들어간 모델을 고르면 하루 수백 회까지 씁니다.
+        정확한 한도는 aistudio.google.com의 Rate Limit 화면에서 볼 수 있습니다.</div>`:''}
       <input type="password" id="apikey" placeholder="키 붙여넣기" value="${esc(S.cfg.keys[p])}">
       <div style="height:10px"></div>
       <button class="btn primary tap" data-act="savekey">키 저장</button>
@@ -1483,7 +1492,7 @@ function openEdit(id){
   const loc = t => new Date(t - new Date().getTimezoneOffset()*60000).toISOString();
   S.edit={ id, type:it.type, area:it.area, title:it.title, detail:it.detail||'',
     tags:(it.tags||[]).join(', '),
-    repeat: it.repeat||'', whenText:'', allText:'', date: ts? loc(ts).slice(0,10) : '',
+    repeat: it.repeat||'', topic: it.topic||'', whenText:'', allText:'', date: ts? loc(ts).slice(0,10) : '',
     time: ts? loc(ts).slice(11,16) : (it.time||''),
     star: !!it.star };
   render();
@@ -1508,6 +1517,11 @@ function editModal(){
           <div class="small">제목·내용·날짜가 한 번에 들어갑니다</div></div></div>
       ${e.allText?`<div class="sub" style="margin-top:10px;font-size:14px">${esc(e.allText)}</div>`:''}
     </div>
+    <p class="small" style="font-weight:700;margin-bottom:8px">분류</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+      ${TORDER.map(k=>`<button class="pill sm tap ${(e.topic||'')===k?'on':''}" data-act="ed-topic" data-v="${k}">${TOPICS[k].icon} ${TOPICS[k].name}</button>`).join('')}
+      <button class="pill sm tap ${e.topic?'':'on'}" data-act="ed-topic" data-v="">자동</button></div>
+
     <p class="small" style="font-weight:700;margin-bottom:8px">제목</p>
     <input type="text" id="e-title" value="${esc(e.title)}">
     <div style="height:14px"></div>
@@ -2080,6 +2094,10 @@ document.addEventListener('click', async e=>{
     case 'askjump': S.tab='assist'; render(); break;
     case 'libtab': S.libTab=v; S.ent=null; render(); break;
     case 'topic': S.topic=v; S.tab='topic'; render(); break;
+    case 'movetopic': S.moveId=id; render(); break;
+    case 'settopic': { if(v!=='cancel'){ const it=S.items.find(x=>x.id===S.moveId);
+        if(it){ it.topic=v||null; save.items(); toast(v?TOPICS[v].name+'으로 옮겼습니다.':'자동 분류로 되돌렸습니다.'); } }
+      S.moveId=null; render(); break; }
     case 'chip': { const label={plan:'오늘 뭐부터 할까?',status:'요즘 나 어때?',week:'이번 주 뭐 했지?'}[v];
       pushChat('me',label); pushChat('ai',localAnswer(v)); render(); break; }
     case 'chatclear': if(confirm('대화 내역을 전부 지웁니다.')){ S.chat=[]; write('lifeos.v5.chat',[]); render(); } break;
@@ -2164,6 +2182,7 @@ document.addEventListener('click', async e=>{
     case 'edit-close': S.edit=null; render(); break;
     case 'ed-type': S.edit.type=v; render(); break;
     case 'ed-rep': S.edit.repeat=v||null; render(); break;
+    case 'ed-topic': S.edit.topic=v||''; render(); break;
     case 'ed-quick': { const base=sod(Date.now()); const D=x=>new Date(x-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
       if(v==='today') S.edit.date=D(base);
       else if(v==='tomorrow') S.edit.date=D(base+DAY);
@@ -2174,7 +2193,7 @@ document.addEventListener('click', async e=>{
       render(); break; }
     case 'edit-save': {
       const e=S.edit, it=S.items.find(x=>x.id===e.id); if(!it){S.edit=null;render();break;}
-      it.type=e.type; it.area=e.area; it.repeat=e.repeat||null;
+      it.type=e.type; it.area=e.area; it.repeat=e.repeat||null; it.topic=e.topic||null;
       it.title=(e.title||'').trim()||it.title;
       it.detail=(e.detail||'').trim();
       it.tags=(e.tags||'').split(',').map(x=>x.trim().replace(/^#/,'')).filter(Boolean).slice(0,5);
