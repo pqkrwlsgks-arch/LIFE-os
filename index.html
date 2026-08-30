@@ -206,13 +206,13 @@ function remapArea(old, it){
 }
 
 const TOPICS={
-  work:{name:'일',icon:'🏭',re:/회사|업무|출근|퇴근|야근|회식|상사|팀장|부서|동료|거래처|납품|고객|시험기|설비|장비|정비|점검|측정|실험|시료|보고|보고서|결재|회의|미팅|출장|프로젝트|과제|성과|평가|일정협의|공정|현장/},
-  learn:{name:'배움',icon:'📚',re:/공부|학습|자격증|시험(?!기)|강의|수업|논문|책|독서|영어|교육|세미나|학회|연구|스터디/},
+  work:{name:'일',icon:'🏭',re:/회사|업무|출근|퇴근|야근|회식|상사|팀장|부서|동료|거래처|납품|고객|시험기|설비|장비|정비|점검|측정|실험|시료|보고|보고서|결재|회의|미팅|출장|프로젝트|과제|성과|평가|공정|현장|공부|학습|자격증|강의|수업|논문|독서|교육|세미나|학회|연구|스터디/},
+  people:{name:'사람',icon:'👥',re:/가족|부모|어머니|아버지|엄마|아빠|형|누나|동생|아내|남편|여자친구|남자친구|아이|아들|딸|친구|모임|결혼|생일|기념일|통화|만나|약속(?!장소)|선물|경조사/},
   health:{name:'건강',icon:'🏃',re:/운동|러닝|달리기|헬스|요가|등산|걷기|산책|수면|잠|피곤|컨디션|스트레스|병원|약|치과|체중|다이어트|식단|금주|금연/},
   money:{name:'돈',icon:'💰',re:/돈|지출|소비|저축|투자|주식|카드|적금|월급|급여|비용|구독|보험|대출|세금|연금|가계부/},
   life:{name:'생활',icon:'🏡',re:null}
 };
-const TORDER=['work','learn','health','money','life'];
+const TORDER=['work','people','health','money','life'];
 function topicOf(i){
   if(i.topic && TOPICS[i.topic]) return i.topic;
   const t=((i.tags||[]).join(' ')+' '+(i.title||'')+' '+(i.detail||''));
@@ -248,7 +248,7 @@ const S={ tab:'home', sessions:read(K.ses,[]), items:read(K.items,[]), photos:re
   edit:null, ask:'', askAns:'', sim:null, goalPlan:null, ent:null,
   micKey:null, quickText:'', calMonth:null, calDay:null,
   chat:read('lifeos.v5.chat',[]), libTab:'timeline', selMode:false, sel:[], doneOpen:false,
-  icsUrl:null, icsList:null, calPrompt:null, topic:'health', calPick:null, pickUrl:null, upTab:'list', moveId:null };
+  icsUrl:null, icsList:null, calPrompt:null, topic:'health', calPick:null, pickUrl:null, upTab:'list', moveId:null, icsFresh:false };
 const save={ ses:()=>write(K.ses,S.sessions), items:()=>write(K.items,S.items),
   photos:()=>write(K.photos,S.photos), ev:()=>write(K.ev,S.events.slice(-400)),
   cache:()=>write(K.cache,S.cache), cfg:()=>write(K.cfg,S.cfg) };
@@ -272,6 +272,15 @@ const save={ ses:()=>write(K.ses,S.sessions), items:()=>write(K.items,S.items),
     save.ses(); save.items();
   }
   localStorage.setItem(K.mig,'1');
+})();
+
+/* v8: 배움 → 일로 통합 */
+(function migrate8(){
+  if(localStorage.getItem('lifeos.v8.migrated')) return;
+  let ch=false;
+  S.items.forEach(i=>{ if(i.topic==='learn'){ i.topic='work'; ch=true; } });
+  if(ch) save.items();
+  localStorage.setItem('lifeos.v8.migrated','1');
 })();
 
 /* v7: 알림 → 일정으로 흡수 */
@@ -461,11 +470,11 @@ ${photoCaptions?'\n[함께 올린 사진]\n'+photoCaptions:''}
 - tags: 한국어 태그 1~3개 (예: ["운동","러닝"], ["회사","시험기"])
 - topic: 아래 다섯 중 하나를 반드시 고른다
   work(회사 일 전부 — 업무·설비·보고·회의·출장·회식·동료·야근 포함)
-  learn(공부·자격증·독서·강의·연구)
+  people(가족·친구·연인·모임·경조사·통화)
   health(운동·수면·컨디션·병원·식단)
   money(지출·저축·투자·카드·월급)
   life(가족·친구·여행·취미·집안일·그 외 일상)
-  판단 기준: 회사와 관련되면 회식·야근·동료 만남도 work다.
+  판단 기준: 회사와 관련되면 회식·야근·동료·공부·자격증도 work다. 사적인 사람 관계는 people이다.
 - sentiment: plus(진전) / minus(못함·문제) / neutral
 - title 20자 이내, detail 한 문장
 - **날짜는 절대 계산하지 마라.** 사용자가 말한 시간 표현을 due_expression에 그대로 옮겨라 (예: "다음 주", "내일 오전"). 없으면 null.
@@ -1868,7 +1877,9 @@ function icsBody(list){
     else if(i.repeat==='weekly') rule='RRULE:FREQ=WEEKLY';
     if(!start) return;
     const day=allDay(i);
-    L.push('BEGIN:VEVENT','UID:'+i.id+'@lifeos','DTSTAMP:'+icsTime(Date.now()));
+    const rev=i.rev||0;
+    const uidStr = (S.icsFresh? (i.id+'-'+(rev+1)) : i.id)+'@lifeos';
+    L.push('BEGIN:VEVENT','UID:'+uidStr,'DTSTAMP:'+icsTime(Date.now()),'SEQUENCE:'+rev);
     if(day){
       L.push('DTSTART;VALUE=DATE:'+icsDate(start),'DTEND;VALUE=DATE:'+icsDate(start+DAY));
     }else{
@@ -1962,13 +1973,18 @@ function calPickModal(){
           <div class="small">${i.dueAt?fmd(i.dueAt)+' '+(allDay(i)?'하루 종일':ftime(i.dueAt)):'시각 미정'}${i.repeat==='daily'?' · 매일':''}</div></div>
       </div>`;}).join('')}
 
-    <div style="height:20px"></div>
+    <div class="row" style="align-items:center;margin-top:6px">
+      <div style="flex:1"><div style="font-weight:600">고친 일정을 새로 등록</div>
+        <div class="small">이미 넣었던 걸 고쳤는데 폰에 반영이 안 되면 켜세요</div></div>
+      <button class="pill sm tap ${S.icsFresh?'on':''}" data-act="icsfresh">${S.icsFresh?'켜짐':'꺼짐'}</button></div>
+    <div style="height:16px"></div>
     ${picked.length?`<a class="btn primary" data-act="calpickgo" href="${S.pickUrl}" download="lifeos.ics"
         style="display:block;text-align:center;text-decoration:none">${picked.length}건 캘린더에 등록</a>`
       :`<button class="btn" disabled>등록할 것을 고르세요</button>`}
     <div style="height:10px"></div>
     <button class="btn ghost tap" data-act="calpickmore">다른 방법으로 넣기</button>
-    <p class="small" style="margin-top:12px">등록 화면이 안 뜨면 ‘파일에 저장’ 후 파일 앱에서 그 파일을 누르세요.</p>
+    <p class="small" style="margin-top:12px">등록 화면이 안 뜨면 ‘파일에 저장’ 후 파일 앱에서 그 파일을 누르세요.
+      새로 등록을 켜면 폰 캘린더에 같은 이름이 두 개 생길 수 있습니다. 예전 것은 지우세요.</p>
   </div>`;
 }
 function calHelpModal(){
@@ -2032,7 +2048,8 @@ function gcalUrl(i){
   return u;
 }
 function icsHref(list){ return 'data:text/calendar;charset=utf-8,'+encodeURIComponent(icsBody(list)); }
-function markExported(list){ list.forEach(i=>{ i.exported=(i.dueAt||0)+'/'+(i.time||'')+'/'+i.title; });
+function markExported(list){ list.forEach(i=>{ i.exported=(i.dueAt||0)+'/'+(i.time||'')+'/'+i.title;
+    if(S.icsFresh) i.rev=(i.rev||0)+1; });
   save.items(); setTimeout(render,800); }
 async function downloadICS(list,name){
   if(!list.length){ toast('폰에 넘길 새 알림이 없습니다.'); return; }
@@ -2164,6 +2181,7 @@ document.addEventListener('click', async e=>{
       if(k>=0) S.calPick.sel.splice(k,1); else S.calPick.sel.push(id);
       render(); break; }
     case 'calpickclose': S.calPick=null; render(); break;
+    case 'icsfresh': S.icsFresh=!S.icsFresh; render(); break;
     case 'calpickgo': { const picked=S.calPick.sel.map(x=>S.items.find(y=>y.id===x)).filter(Boolean);
       markExported(picked); setTimeout(()=>{ S.calPick=null; render();
         toast('캘린더 화면에서 캘린더와 알림을 고르고 추가를 누르세요.'); }, 900); break; }
@@ -2223,7 +2241,7 @@ document.addEventListener('click', async e=>{
       const ts = e.date ? new Date(e.date+'T'+(e.time||'09:00')).getTime() : null;
       if(e.type==='task'||e.type==='event'){ it.dueAt=ts; it.duePrecision=ts?'exact':'none'; it.needsConfirm=false;
         if(e.type==='event'&&ts) it.occurredAt=ts;
-        it.lastFiredAt=null; it.exported=null;
+        it.lastFiredAt=null; it.exported=null; it.rev=(it.rev||0)+1;
         if(it.status!=='done') it.status='open'; }
       else { it.occurredAt=ts||it.occurredAt; it.dueAt=null;
         if(!it.status||it.status==='open') it.status='logged'; }
