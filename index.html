@@ -207,12 +207,32 @@ function remapArea(old, it){
 
 const TOPICS={
   work:{name:'일',icon:'🏭',re:/회사|업무|출근|퇴근|야근|회식|상사|팀장|부서|동료|거래처|납품|고객|시험기|설비|장비|정비|점검|측정|실험|시료|보고|보고서|결재|회의|미팅|출장|프로젝트|과제|성과|평가|공정|현장|공부|학습|자격증|강의|수업|논문|독서|교육|세미나|학회|연구|스터디/},
-  people:{name:'사람',icon:'👥',re:/가족|부모|어머니|아버지|엄마|아빠|형|누나|동생|아내|남편|여자친구|남자친구|아이|아들|딸|친구|모임|결혼|생일|기념일|통화|만나|약속(?!장소)|선물|경조사/},
   health:{name:'건강',icon:'🏃',re:/운동|러닝|달리기|헬스|요가|등산|걷기|산책|수면|잠|피곤|컨디션|스트레스|병원|약|치과|체중|다이어트|식단|금주|금연/},
   money:{name:'돈',icon:'💰',re:/돈|지출|소비|저축|투자|주식|카드|적금|월급|급여|비용|구독|보험|대출|세금|연금|가계부/},
-  life:{name:'생활',icon:'🏡',re:null}
+  life:{name:'생활',icon:'🏡',re:null}   // 가족·친구·취미·집안일 등 나머지 전부
 };
-const TORDER=['work','people','health','money','life'];
+const TORDER=['work','health','money','life'];
+const SUBS={
+  life:[['people','사람',/가족|부모|어머니|아버지|엄마|아빠|형|누나|동생|아내|남편|여자친구|남자친구|아이|아들|딸|친구|모임|결혼|생일|기념일|통화|경조사|선물/],
+        ['home','집·살림',/집|청소|빨래|정리|이사|수리|차량|자동차|정비|주유|은행|보험|행정|서류|우편|장보기|쇼핑|택배/],
+        ['fun','여가',/여행|영화|드라마|게임|음악|공연|전시|카페|맛집|취미|산책|캠핑|낚시|사진/]],
+  work:[['field','현장·설비',/시험기|설비|장비|정비|점검|측정|실험|시료|공정|현장/],
+        ['doc','보고·문서',/보고|보고서|결재|문서|자료|정리|제출|평가/],
+        ['people','사람·회의',/회의|미팅|거래처|고객|팀|동료|상사|회식|출장/],
+        ['study','공부',/공부|자격증|강의|논문|독서|교육|세미나|학회|연구/]],
+  health:[['move','운동',/운동|러닝|달리기|헬스|요가|등산|걷기|산책|수영|자전거/],
+          ['body','컨디션',/수면|잠|피곤|컨디션|스트레스|체중|다이어트|식단/],
+          ['care','병원·약',/병원|약|치과|검진|진료|처방/]],
+  money:[['spend','지출',/지출|소비|카드|결제|비용|구독|장보기/],
+         ['save','저축·투자',/저축|적금|투자|주식|연금|예금/],
+         ['fix','고정비',/보험|대출|세금|월세|관리비|통신/]]
+};
+function subOf(i,topic){
+  const defs=SUBS[topic]; if(!defs) return null;
+  const t=((i.tags||[]).join(' ')+' '+(i.title||'')+' '+(i.detail||''));
+  for(const [k,,re] of defs) if(re.test(t)) return k;
+  return 'etc';
+}
 function topicOf(i){
   if(i.topic && TOPICS[i.topic]) return i.topic;
   const t=((i.tags||[]).join(' ')+' '+(i.title||'')+' '+(i.detail||''));
@@ -248,7 +268,7 @@ const S={ tab:'home', sessions:read(K.ses,[]), items:read(K.items,[]), photos:re
   edit:null, ask:'', askAns:'', sim:null, goalPlan:null, ent:null,
   micKey:null, quickText:'', calMonth:null, calDay:null,
   chat:read('lifeos.v5.chat',[]), libTab:'timeline', selMode:false, sel:[], doneOpen:false,
-  icsUrl:null, icsList:null, calPrompt:null, topic:'health', calPick:null, pickUrl:null, upTab:'list', moveId:null, icsFresh:false };
+  icsUrl:null, icsList:null, calPrompt:null, topic:'work', calPick:null, pickUrl:null, upTab:'list', moveId:null, icsFresh:false, sub:null, subTopic:null };
 const save={ ses:()=>write(K.ses,S.sessions), items:()=>write(K.items,S.items),
   photos:()=>write(K.photos,S.photos), ev:()=>write(K.ev,S.events.slice(-400)),
   cache:()=>write(K.cache,S.cache), cfg:()=>write(K.cfg,S.cfg) };
@@ -272,6 +292,15 @@ const save={ ses:()=>write(K.ses,S.sessions), items:()=>write(K.items,S.items),
     save.ses(); save.items();
   }
   localStorage.setItem(K.mig,'1');
+})();
+
+/* v9: 사람 → 생활로 통합 */
+(function migrate9(){
+  if(localStorage.getItem('lifeos.v9.migrated')) return;
+  let ch=false;
+  S.items.forEach(i=>{ if(i.topic==='people'){ i.topic='life'; ch=true; } });
+  if(ch) save.items();
+  localStorage.setItem('lifeos.v9.migrated','1');
 })();
 
 /* v8: 배움 → 일로 통합 */
@@ -525,11 +554,10 @@ ${photoCaptions?'\n[함께 올린 사진]\n'+photoCaptions:''}
 - tags: 한국어 태그 1~3개 (예: ["운동","러닝"], ["회사","시험기"])
 - topic: 아래 다섯 중 하나를 반드시 고른다
   work(회사 일 전부 — 업무·설비·보고·회의·출장·회식·동료·야근 포함)
-  people(가족·친구·연인·모임·경조사·통화)
   health(운동·수면·컨디션·병원·식단)
   money(지출·저축·투자·카드·월급)
-  life(가족·친구·여행·취미·집안일·그 외 일상)
-  판단 기준: 회사와 관련되면 회식·야근·동료·공부·자격증도 work다. 사적인 사람 관계는 people이다.
+  life(가족·친구·연인·모임·여행·취미·집안일·그 외 일상)
+  판단 기준: 회사와 관련되면 회식·야근·동료·공부·자격증도 work다. 사적인 만남은 life다.
 - sentiment: plus(진전) / minus(못함·문제) / neutral
 - title 20자 이내, detail 한 문장
 - **날짜는 절대 계산하지 마라.** 사용자가 말한 시간 표현을 due_expression에 **그대로** 옮겨라.
@@ -1353,15 +1381,19 @@ function assist(){
 
 function topic(){
   const k=S.topic||'health', T=TOPICS[k];
-  const list=S.items.filter(i=>topicOf(i)===k)
+  const all=S.items.filter(i=>topicOf(i)===k)
     .sort((a,b)=>(b.occurredAt||b.createdAt)-(a.occurredAt||a.createdAt));
+  const defs=SUBS[k]||[];
+  const subCount={}; all.forEach(i=>{const sk=subOf(i,k); subCount[sk]=(subCount[sk]||0)+1;});
+  const cur=S.sub&&S.subTopic===k?S.sub:null;
+  const list=cur? all.filter(i=>subOf(i,k)===cur) : all;
   const days={};
   list.forEach(i=>{ const d=sod(i.occurredAt||i.createdAt); (days[d]=days[d]||[]).push(i); });
   const keys=Object.keys(days).map(Number).sort((a,b)=>b-a).slice(0,30);
-  const n30=list.filter(i=>(i.occurredAt||i.createdAt)>Date.now()-30*DAY).length;
-  const n30p=list.filter(i=>{const t=i.occurredAt||i.createdAt;
+  const n30=all.filter(i=>(i.occurredAt||i.createdAt)>Date.now()-30*DAY).length;
+  const n30p=all.filter(i=>{const t=i.occurredAt||i.createdAt;
     return t>Date.now()-60*DAY&&t<=Date.now()-30*DAY;}).length;
-  const tags={}; list.slice(0,80).forEach(i=>(i.tags||[]).forEach(g=>tags[g]=(tags[g]||0)+1));
+  const tags={}; all.slice(0,80).forEach(i=>(i.tags||[]).forEach(g=>tags[g]=(tags[g]||0)+1));
   const top=Object.entries(tags).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const acts=id=>`<div class="acts">
     <button class="a-edit" data-act="movetopic" data-id="${id}">분류</button>
@@ -1384,6 +1416,12 @@ function topic(){
       ${TORDER.map(x=>`<button class="pill sm tap ${x===k?'on':''}" data-act="topic" data-v="${x}">${TOPICS[x].icon} ${TOPICS[x].name}</button>`).join('')}
     </div>
 
+    ${defs.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+      <button class="pill sm tap ${cur?'':'on'}" data-act="sub" data-v="">전체 ${all.length}</button>
+      ${defs.map(([sk,label])=>subCount[sk]?
+        `<button class="pill sm tap ${cur===sk?'on':''}" data-act="sub" data-v="${sk}">${label} ${subCount[sk]}</button>`:'').join('')}
+      ${subCount.etc?`<button class="pill sm tap ${cur==='etc'?'on':''}" data-act="sub" data-v="etc">기타 ${subCount.etc}</button>`:''}
+    </div>`:''}
     ${top.length?`<div style="margin-bottom:18px">
       ${top.map(([g,c])=>`<span class="tagchip">#${esc(g)} ${c}</span>`).join('')}</div>`:''}
 
@@ -1703,7 +1741,7 @@ function captureModal(){
 }
 
 /* ================= 렌더 ================= */
-const TABS=[['home','홈'],['upcoming','앞으로'],['_mic',''],['thoughts','생각'],['assist','비서']];
+const TABS=[['home','홈'],['thoughts','생각'],['_mic',''],['upcoming','앞으로'],['assist','비서']];
 function render(){
   document.getElementById('app').innerHTML=view();
   document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>k==='_mic'
@@ -2190,7 +2228,8 @@ document.addEventListener('click', async e=>{
     case 'dictate': micToggle(v); break;
     case 'askjump': S.tab='assist'; render(); break;
     case 'libtab': S.libTab=v; S.ent=null; render(); break;
-    case 'topic': S.topic=v; S.tab='topic'; render(); break;
+    case 'topic': S.topic=v; S.sub=null; S.subTopic=v; S.tab='topic'; render(); break;
+    case 'sub': S.sub=v||null; S.subTopic=S.topic; render(); break;
     case 'movetopic': S.moveId=id; render(); break;
     case 'settopic': { if(v!=='cancel'){ const it=S.items.find(x=>x.id===S.moveId);
         if(it){ it.topic=v||null; save.items(); toast(v?TOPICS[v].name+'으로 옮겼습니다.':'자동 분류로 되돌렸습니다.'); } }
