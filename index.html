@@ -2217,6 +2217,11 @@ document.addEventListener('click', async e=>{
     case 'cap-back': S.result=null; render(); break;
     case 'cap-scope': S.capture.scope=v; render(); break;
     case 'mic': toggleMic(); break;
+    case 'clear': { if(S.micKey) micStop();
+      if(S.capture) S.capture.transcript='';
+      micBase=''; micFinal=''; micSession='';
+      const ta=document.getElementById('draft'); if(ta) ta.value='';
+      render(); break; }
     case 'decompose': decompose(); break;
     case 'saveraw': saveRaw(); break;
     case 'commit': commit(); break;
