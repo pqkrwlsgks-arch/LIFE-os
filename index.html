@@ -342,17 +342,39 @@ function toast(m){document.querySelectorAll('.toast').forEach(e=>e.remove());
   document.body.appendChild(d);clearTimeout(toastTimer);toastTimer=setTimeout(()=>d.remove(),3400);}
 
 /* ================= 날짜 해석 (앱 코드 담당) ================= */
+const KHOUR={'한':1,'두':2,'세':3,'네':4,'다섯':5,'여섯':6,'일곱':7,'여덟':8,'아홉':9,'열':10,'열한':11,'열두':12};
+const KMIN={'십':10,'이십':20,'삼십':30,'사십':40,'오십':50};
+function sinoNum(w){
+  const D={'일':1,'이':2,'삼':3,'사':4,'오':5,'육':6,'칠':7,'팔':8,'구':9};
+  if(w==='십') return 10;
+  const i=w.indexOf('십');
+  if(i<0) return D[w]||0;
+  const tens=i===0?1:(D[w.slice(0,i)]||0);
+  const ones=D[w.slice(i+1)]||0;
+  return tens*10+ones;
+}
+function normKor(t){
+  let x=' '+t+' ';
+  x=x.replace(/(열두|열한|열|아홉|여덟|일곱|여섯|다섯|네|세|두|한)\s*시/g,(m,w)=>KHOUR[w]+'시');
+  x=x.replace(/시\s*반/g,'시 30분');
+  x=x.replace(/(삼십|이십|십|사십|오십)\s*분/g,(m,w)=>KMIN[w]+'분');
+  x=x.replace(/([일이삼사오육칠팔구십]+)\s*월/g,(m,w)=>{const n=sinoNum(w);return n>=1&&n<=12?n+'월':m;});
+  x=x.replace(/([일이삼사오육칠팔구십]+)\s*일(?![간정])/g,(m,w)=>{const n=sinoNum(w);return n>=1&&n<=31?n+'일':m;});
+  return x.trim();
+}
 function resolveDue(expr){
   if(!expr) return {dueAt:null,precision:'none',needsConfirm:false};
-  const s=String(expr).trim();
+  const s=normKor(String(expr).trim());
   const now=new Date(); const base=sod(Date.now());
   const hour = /오전/.test(s)?9 : /점심/.test(s)?12 : /오후/.test(s)?14 : /저녁|밤/.test(s)?19 : 9;
   const hm=s.match(/(\d{1,2})\s*시/);
-  let H=hour;
+  let H=hour, M=0;
   if(hm){ H=+hm[1];
     if(/오후|저녁|밤/.test(s)&&H<12) H+=12;
-    else if(!/오전|새벽/.test(s)&&H>=1&&H<=6) H+=12; }
-  const at=(d,h)=>{const x=new Date(d);x.setHours(h||H||9,0,0,0);return x.getTime();};
+    else if(!/오전|새벽|아침/.test(s)&&H>=1&&H<=6) H+=12; }
+  const mm=s.match(/(\d{1,2})\s*분/);
+  if(mm) M=Math.min(59,+mm[1]);
+  const at=(d,h)=>{const x=new Date(d);x.setHours(h||H||9,M||0,0,0);return x.getTime();};
   const hasHour=/(\d{1,2})\s*시|정오|자정/.test(s);
   const prec=()=>hasHour?'exact':'day';
   let m=s.match(/(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})/);
@@ -386,14 +408,14 @@ function resolveDue(expr){
     if(d.getTime()<base) d=new Date(now.getFullYear(),now.getMonth()+1,+m[1]);
     return {dueAt:at(d,0),precision:prec(),needsConfirm:false};
   }
-  if(/오늘|이따|잠시 후/.test(s)) return {dueAt:at(base,H),precision:'day',needsConfirm:false};
-  if(/내일/.test(s)) return {dueAt:at(base+DAY,H),precision:'day',needsConfirm:false};
-  if(/모레/.test(s)) return {dueAt:at(base+2*DAY,H),precision:'day',needsConfirm:false};
+  if(/오늘|이따|잠시 후/.test(s)) return {dueAt:at(base,H),precision:prec(),needsConfirm:false};
+  if(/내일/.test(s)) return {dueAt:at(base+DAY,H),precision:prec(),needsConfirm:false};
+  if(/모레/.test(s)) return {dueAt:at(base+2*DAY,H),precision:prec(),needsConfirm:false};
   const wd=['일요일','월요일','화요일','수요일','목요일','금요일','토요일'].findIndex(w=>s.includes(w));
   if(wd>=0){ let d=new Date(base); const diff=(wd-d.getDay()+7)%7||7; d=new Date(base+diff*DAY);
-    return {dueAt:at(d,H),precision:'day',needsConfirm:false}; }
+    return {dueAt:at(d,H),precision:prec(),needsConfirm:false}; }
   if(/주말/.test(s)){ const d=new Date(base); const diff=(6-d.getDay()+7)%7||7;
-    return {dueAt:at(base+diff*DAY,H),precision:'day',needsConfirm:false}; }
+    return {dueAt:at(base+diff*DAY,H),precision:prec(),needsConfirm:false}; }
   if(/다음\s*주|담주/.test(s)){ const d=new Date(base); const diff=(1-d.getDay()+7)%7||7;
     return {dueAt:at(base+diff*DAY,9),precision:'week',needsConfirm:true}; }
   if(/이번\s*주/.test(s)){ const d=new Date(base); const diff=(5-d.getDay()+7)%7;
@@ -402,7 +424,9 @@ function resolveDue(expr){
     return {dueAt:at(d,9),precision:'month',needsConfirm:true}; }
   if(/다음\s*달/.test(s)){ const d=new Date(now.getFullYear(),now.getMonth()+2,0);
     return {dueAt:at(d,9),precision:'month',needsConfirm:true}; }
-  const dd=s.match(/(\d+)\s*일\s*(뒤|후)/); if(dd) return {dueAt:at(base+ +dd[1]*DAY,H),precision:'day',needsConfirm:false};
+  const dd=s.match(/(\d+)\s*일\s*(뒤|후)/); if(dd) return {dueAt:at(base+ +dd[1]*DAY,H),precision:prec(),needsConfirm:false};
+  if(hasHour){ let t=at(base,H); if(t<Date.now()) t=at(base+DAY,H);
+    return {dueAt:t,precision:'exact',needsConfirm:false}; }
   return {dueAt:null,precision:'none',needsConfirm:false};
 }
 
@@ -1665,8 +1689,11 @@ function captureModal(){
       <button class="btn ghost tap" data-act="import" style="flex:1">📷 사진 붙이기${phs.length?' ('+phs.length+')':''}</button></div>`}
     ${phs.length?`<div class="sheet" style="margin-bottom:12px">${phs.map(id=>`<img data-thumb="${id}" alt="">`).join('')}</div>`:''}
 
-    <textarea id="draft" rows="6" placeholder="${c.mode==='event'?'예) 다음 주 화요일 오후 3시에 정비팀 회의. 금요일 저녁 7시 저녁 약속.'
-      :c.mode==='task'?'예) 다음 주에 자동차 정비 예약해야 하고, 내일 오전에 정비팀에 전화해야 해.':'말하거나 여기에 적으세요. 예) 오늘 200톤 시험기 오일 문제를 해결했고, 운동은 못 했고, 다음 주 자동차 정비도 해야 해. 그리고 매일 밤 10시에 약 먹으라고 알려줘.'}">${esc(c.transcript)}</textarea>
+    <div style="position:relative">
+      <textarea id="draft" rows="6" style="padding-right:46px" placeholder="${c.mode==='event'?'예) 다음 주 화요일 오후 3시에 정비팀 회의. 금요일 저녁 7시 저녁 약속.'
+        :c.mode==='task'?'예) 다음 주에 자동차 정비 예약해야 하고, 내일 오전에 정비팀에 전화해야 해.':'말하거나 여기에 적으세요. 예) 9월 2일 오전 6시에 회의. 오늘 운동은 못 했다.'}">${esc(c.transcript)}</textarea>
+      ${c.transcript?'<button class="clrbtn tap" data-act="clear" aria-label="지우기">✕</button>':''}
+    </div>
     <div style="height:12px"></div>
     <button class="btn primary tap" id="goBtn" data-act="decompose" ${c.transcript.trim()||phs.length?'':'disabled'}>${S.busy?'나누는 중…':'AI로 정리하기'}</button>
     <div style="height:10px"></div>
