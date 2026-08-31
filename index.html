@@ -346,15 +346,46 @@ function resolveDue(expr){
   if(!expr) return {dueAt:null,precision:'none',needsConfirm:false};
   const s=String(expr).trim();
   const now=new Date(); const base=sod(Date.now());
-  const at=(d,h)=>{const x=new Date(d);x.setHours(h||9,0,0,0);return x.getTime();};
-  let m=s.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if(m) return {dueAt:at(new Date(+m[1],+m[2]-1,+m[3]),9),precision:'exact',needsConfirm:false};
   const hour = /오전/.test(s)?9 : /점심/.test(s)?12 : /오후/.test(s)?14 : /저녁|밤/.test(s)?19 : 9;
-  const hm=s.match(/(\d{1,2})시/);
+  const hm=s.match(/(\d{1,2})\s*시/);
   let H=hour;
   if(hm){ H=+hm[1];
     if(/오후|저녁|밤/.test(s)&&H<12) H+=12;
     else if(!/오전|새벽/.test(s)&&H>=1&&H<=6) H+=12; }
+  const at=(d,h)=>{const x=new Date(d);x.setHours(h||H||9,0,0,0);return x.getTime();};
+  const hasHour=/(\d{1,2})\s*시|정오|자정/.test(s);
+  const prec=()=>hasHour?'exact':'day';
+  let m=s.match(/(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})/);
+  if(m) return {dueAt:at(new Date(+m[1],+m[2]-1,+m[3]),0),precision:prec(),needsConfirm:false};
+
+  // 9월 2일 / 9월2일 / 내년 3월 5일
+  m=s.match(/(내년|올해|금년)?\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일?/);
+  if(m){
+    let y=now.getFullYear()+(m[1]==='내년'?1:0);
+    let d=new Date(y,+m[2]-1,+m[3]);
+    if(!m[1] && d.getTime()<base) d=new Date(y+1,+m[2]-1,+m[3]);   // 이미 지난 날짜면 내년
+    return {dueAt:at(d,0),precision:prec(),needsConfirm:false};
+  }
+  // 9/2 형식
+  m=s.match(/(?:^|\s)(\d{1,2})\/(\d{1,2})(?!\d)/);
+  if(m){
+    let d=new Date(now.getFullYear(),+m[1]-1,+m[2]);
+    if(d.getTime()<base) d=new Date(now.getFullYear()+1,+m[1]-1,+m[2]);
+    return {dueAt:at(d,0),precision:prec(),needsConfirm:false};
+  }
+  // 다음 달 5일 / 이번 달 20일
+  m=s.match(/(다음|이번|담)\s*달\s*(\d{1,2})\s*일/);
+  if(m){
+    const add=(m[1]==='다음'||m[1]==='담')?1:0;
+    return {dueAt:at(new Date(now.getFullYear(),now.getMonth()+add,+m[2]),0),precision:prec(),needsConfirm:false};
+  }
+  // 그냥 "2일에" → 이번 달, 지났으면 다음 달
+  m=s.match(/(?:^|\s)(\d{1,2})\s*일(?!간|째|정도|동안)/);
+  if(m && !/개월|주일/.test(s)){
+    let d=new Date(now.getFullYear(),now.getMonth(),+m[1]);
+    if(d.getTime()<base) d=new Date(now.getFullYear(),now.getMonth()+1,+m[1]);
+    return {dueAt:at(d,0),precision:prec(),needsConfirm:false};
+  }
   if(/오늘|이따|잠시 후/.test(s)) return {dueAt:at(base,H),precision:'day',needsConfirm:false};
   if(/내일/.test(s)) return {dueAt:at(base+DAY,H),precision:'day',needsConfirm:false};
   if(/모레/.test(s)) return {dueAt:at(base+2*DAY,H),precision:'day',needsConfirm:false};
@@ -477,7 +508,8 @@ ${photoCaptions?'\n[함께 올린 사진]\n'+photoCaptions:''}
   판단 기준: 회사와 관련되면 회식·야근·동료·공부·자격증도 work다. 사적인 사람 관계는 people이다.
 - sentiment: plus(진전) / minus(못함·문제) / neutral
 - title 20자 이내, detail 한 문장
-- **날짜는 절대 계산하지 마라.** 사용자가 말한 시간 표현을 due_expression에 그대로 옮겨라 (예: "다음 주", "내일 오전"). 없으면 null.
+- **날짜는 절대 계산하지 마라.** 사용자가 말한 시간 표현을 due_expression에 **그대로** 옮겨라.
+  예: "다음 주", "내일 오전", "9월 2일", "9월 2일 오후 3시", "다음 달 5일". 날짜 표현이 조금이라도 있으면 반드시 채운다. 없을 때만 null.
 - reminder면 schedule에 {"type":"recurring","time":"22:00"} 또는 {"type":"once","when":"내일 오전"} 형태로.
 - 업무 기록이면 work에 설비/문제/조치/결과. 없으면 null.
 - entities: 반복해서 등장할 만한 고유 대상만 [{"kind":"person|place|equipment|project","name":"이름"}] 로. 없으면 [].
@@ -504,7 +536,7 @@ function localDecompose(text, mode){
         :(mode==='task'||/해야|하자|예약|신청|필요|알아봐/.test(s))?'task':'record',
       area:'LIFE', tags:pick(s), title:s.slice(0,20), detail:s,
       sentiment:/못 |못했|안 했|실패|문제|밀렸/.test(s)?'minus':'neutral',
-      due_expression:(s.match(/((오늘|내일|모레|이번\s*주|다음\s*주|주말|이번\s*달|다음\s*달|월요일|화요일|수요일|목요일|금요일|토요일|일요일)[^,\.]{0,10}?(오전|오후|저녁|밤)?\s*(\d{1,2}시)?)/)||[null])[0],
+      due_expression:(s.match(/((\d{1,2}\s*월\s*\d{1,2}\s*일|\d{4}[-.\/]\d{1,2}[-.\/]\d{1,2}|\d{1,2}\/\d{1,2}|오늘|내일|모레|이번\s*주|다음\s*주|주말|이번\s*달|다음\s*달|다음\s*달\s*\d{1,2}\s*일|월요일|화요일|수요일|목요일|금요일|토요일|일요일)[^,\.]{0,12}?(오전|오후|저녁|밤)?\s*(\d{1,2}\s*시)?)/)||[null])[0],
       schedule:null, work:null })) };
 }
 
